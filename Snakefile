@@ -5,6 +5,7 @@ import re
 import csv
 import Bio.SeqIO
 import subprocess
+import tempfile
 from snakemake.utils import min_version
 from Bio.Seq import Seq
 import pandas as pd
@@ -644,7 +645,22 @@ rule trinity_final:
     16
   shell:
     """
+    # read_partitions is deleted after a successful assembly (see below), and Trinity needs it to collect the transcripts
+    # Trinity does not partition the reads again while its own checkpoint files exist, so they must be removed first
+    if [ ! -d trinity_out_dir/read_partitions ]; then
+      echo "ERROR: trinity_out_dir/read_partitions is missing. It was deleted after an earlier assembly." | tee -a {log} >&2
+      echo "To assemble again: rm -f trinity_out_dir/partitioned_reads.files.list.ok trinity_out_dir/recursive_trinity.cmds.ok" | tee -a {log} >&2
+      echo "then run snakemake again with: --forcerun trinity_inchworm_chrysalis" | tee -a {log} >&2
+      exit 1
+    fi
+
     Trinity --max_memory {params.memory}G --CPU {threads} --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
+
+    # read_partitions holds one folder per read cluster (can be millions of files) and is not needed after the assembly
+    # rename first, so that a half-deleted folder is never left under its real name
+    rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
+    mv trinity_out_dir/read_partitions trinity_out_dir/read_partitions.deleting &>> {log}
+    rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
     """
 
 
@@ -747,29 +763,32 @@ rule busco:
   conda:
     "envs/busco.yaml"
   params:
-    memory="10"
+    memory="10",
+    lineage=config.get("lineage", "")
   threads:
     4
   shell:
     """
-    lineage={config[lineage]} &> {log}
-    if [ -z "$lineage"] &>> {log}
-    then &>> {log}
-      busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} --auto-lineage -c {threads} &>> {log}
-    else &>> {log}
-      busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} -l $lineage -c {threads} &>> {log}
-    fi &>> {log}
-
-    status=$?
-
-    if [ $status -eq 0 ]
-    then
-      echo "BUSCO run completed successfully" &>> {log}
-      cp busco/short_summary*.txt {output.report} &>> {log}
+    # an empty or missing lineage lets BUSCO choose the lineage automatically
+    if [ -z "{params.lineage}" ]; then
+      lineage_option="--auto-lineage"
     else
-      echo "BUSCO run failed" &>> {log}
-      exit 1 &>> {log}
+      lineage_option="-l {params.lineage}"
     fi
+
+    busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} $lineage_option -c {threads} &> {log}
+    echo "BUSCO run completed successfully" &>> {log}
+
+    # with --auto-lineage BUSCO also writes a short_summary.generic.* file, the report is the specific one
+    cp {output.out_directory}/short_summary.specific.*.txt {output.report} &>> {log}
+
+    # pack the per-gene folders (thousands of small files) into one archive each
+    for d in {output.out_directory}/run_*/busco_sequences {output.out_directory}/run_*/hmmer_output; do
+      if [ -d "$d" ]; then
+        tar -czf "$d.tar.gz" -C "$(dirname "$d")" "$(basename "$d")" &>> {log}
+        rm -rf "$d" &>> {log}
+      fi
+    done
     """
 
 rule transdecoder_longorfs:
@@ -1259,13 +1278,10 @@ rule tmhmm_parallel:
   threads:
     1
   run:
-    output_dir = os.path.join("annotations", "tmhmm")
-
-    # create output directory
-    os.makedirs(output_dir, exist_ok=True)
-
     # open the input file, output file and log file
-    with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle:
+    # tmhmm.py writes its result files into the current directory, so each chunk works in its own temporary directory
+    # the temporary directory and the per-protein files in it are deleted when the chunk is done
+    with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory() as tmp_dir:
 
       # iterate through individual sequences in input file, tmhmm.py can be executed with just one sequence at a time
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
@@ -1281,19 +1297,19 @@ rule tmhmm_parallel:
         record.seq = Seq(re.sub('X',"",str(record.seq)))
 
         # saving this fasta file
-        fasta_file =  os.path.join(output_dir, record.id + ".fasta")
+        fasta_file =  os.path.join(tmp_dir, record.id + ".fasta")
         Bio.SeqIO.write(record, fasta_file, "fasta")
 
         # executing the tmhmm.py on created fasta
         cmd_tmhmm = ['tmhmm', '-f', fasta_file]
-        subprocess.run(cmd_tmhmm, stdout = log_handle, stderr = log_handle)
+        subprocess.run(cmd_tmhmm, stdout = log_handle, stderr = log_handle, cwd = tmp_dir)
 
-        # 3 files are created afterwards
+        # 3 files are created afterwards in tmp_dir
         # record.id.summary     record.id.annotation    record.id.plot
 
-        summary_file = record.id + ".summary"
-        annotation_file = record.id + ".annotation"
-        plot_file = record.id + ".plot"
+        summary_file = os.path.join(tmp_dir, record.id + ".summary")
+        annotation_file = os.path.join(tmp_dir, record.id + ".annotation")
+        plot_file = os.path.join(tmp_dir, record.id + ".plot")
 
         # creating shorter output from summary file
         with open(summary_file, "r") as inp:

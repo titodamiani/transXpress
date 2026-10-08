@@ -202,11 +202,11 @@ If this is the case, add time option in submission command in transXpress.sh scr
 
 For example, in case of Slurm change
 ~~~~
-snakemake --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm.out -e {log}.slurm.err -n {threads} --mem {params.memory}GB" "$@"
+snakemake --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm -n {threads} --mem {params.memory}GB" "$@"
 ~~~~
 to
 ~~~~
-snakemake --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm.out -e {log}.slurm.err -n {threads} --mem {params.memory} --time=06:00:00" "$@"
+snakemake --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm -n {threads} --mem {params.memory} --time=06:00:00" "$@"
 ~~~~
 This sets time limit to 6 hours. You may have to use different time limit based on size of reads used for assembly. 
 

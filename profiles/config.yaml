@@ -6,8 +6,7 @@ cluster:
     --partition={resources.partition}
     -n {threads}
     --mem={params.memory}GB
-    -o {log}.slurm.out 
-    -e {log}.slurm.err 
+    -o {log}.slurm
     --time={resources.time}
     --parsable
 

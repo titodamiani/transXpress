@@ -699,19 +699,13 @@ rule transcriptome_copy:
     gene_trans_map=rules.rnaspades.output.gene_trans_map if config["assembler"]=="rnaspades" else rules.trinity_final.output.gene_trans_map,
   output:
     transcriptome="transcriptome.fasta",
-    gene_trans_map="transcriptome.gene_trans_map",
-    #create copies the same way older Trinity versions did, for parity, in case other dependencies on that path exist?
-    redundant_transcriptome="trinity_out_dir/Trinity.fasta",
-    redundant_gene_trans_map="trinity_out_dir/Trinity.fasta.gene_trans_map"
+    gene_trans_map="transcriptome.gene_trans_map"
   log:
     "logs/transcriptome_copy.log"
   shell:
     """
     cp -p {input.transcriptome} {output.transcriptome} &> {log}
     cp -p {input.gene_trans_map} {output.gene_trans_map} &>> {log}
-    #create copies the same way older Trinity versions did, for parity, in case other dependencies on that path exist?
-    cp -p {input.transcriptome} {output.redundant_transcriptome} &> {log}
-    cp -p {input.gene_trans_map} {output.redundant_gene_trans_map} &>> {log}
     """
 
 
@@ -848,7 +842,7 @@ checkpoint align_reads:
   and estimating the abundance with RSEM.
   """
   input:
-    samples=config["samples_file"],
+    samples="samples_trimmed.txt",
     transcriptome="transcriptome.fasta",
     gene_trans_map="transcriptome.gene_trans_map"
   output:
@@ -863,6 +857,9 @@ checkpoint align_reads:
     16
   shell:
     """
+    # Remove old markers so the aligner runs again on the trimmed reads.
+    for rep in $(awk '{{print $2}}' {input.samples}); do rm -f "$rep/bowtie2.bam.ok"; done
+
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
 
 
@@ -883,19 +880,20 @@ checkpoint align_reads:
     else
       $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} {config[strand_specific]} --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> {log}
     fi
+
+    # for_rsem.bam is a large temporary copy of the alignment. Nothing reads it later.
+    for rep in $(awk '{{print $2}}' {input.samples}); do rm -f "$rep/bowtie2.bam.for_rsem.bam"; done
     """
 
 checkpoint prepare_samples_for_IGV:
   """
   Not run by default.
-  Moves bam alignment files to bowtie_alignments directory
-  and prepares the files to be used by IGV by sorting and 
-  indexing them.
+  Prepares the bam alignment files to be used by IGV by sorting
+  them into the bowtie_alignments directory and indexing them.
   """
   input:
     alignment="{sample}/bowtie2.bam"
   output:
-    alignment="bowtie_alignments/{sample}.bam",
     sorted_alignment="bowtie_alignments/{sample}.sorted.bam",
     indexed_alignment="bowtie_alignments/{sample}.sorted.bam.bai"
   log:
@@ -903,13 +901,12 @@ checkpoint prepare_samples_for_IGV:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="2"
+    memory="10"
   threads:
-    1
+    4
   shell:
     """
-    cp {input.alignment} {output.alignment} &> {log}
-    samtools sort --threads {threads} -o {output.sorted_alignment} {output.alignment} &>> {log}
+    samtools sort --threads {threads} -m 2G -o {output.sorted_alignment} {input.alignment} &> {log}
     samtools index {output.sorted_alignment} &>> {log}
     """ 
 

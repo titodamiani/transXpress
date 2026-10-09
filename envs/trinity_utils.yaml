@@ -1,8 +1,6 @@
 channels:
   - conda-forge
   - bioconda
-  - r
-  - defaults
 dependencies:
   - trinity=2.13.2=hea94271_3
   - bioconductor-edger=3.36.0=r41hc247a5b_2

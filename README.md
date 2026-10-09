@@ -44,12 +44,13 @@ The conda dependencies are installed in smaller conda environments automatically
 git clone https://github.com/transXpress/transXpress.git
 ~~~~
 
-2. Install [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge)
+2. Install [Miniforge3](https://github.com/conda-forge/miniforge)
 ~~~~
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh"
-bash Mambaforge-Linux-x86_64.sh
-rm Mambaforge-Linux-x86_64.sh
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
+bash Miniforge3-Linux-x86_64.sh
+rm Miniforge3-Linux-x86_64.sh
 ~~~~
+All commands below use `conda`. conda 23.10 and later use the libmamba solver by default, so the solve speed is the same as with mamba. Snakemake runs with `--conda-frontend conda`, because mamba is not on the PATH inside cluster jobs.
 
 3. To ensure correct versions of R packages will be used unset R_LIBS_SITE
 ~~~~
@@ -58,13 +59,18 @@ unset R_LIBS_SITE
 
 4. Setup main transXpress conda environment:
 ~~~~
-mamba activate base
-mamba create -c conda-forge -c bioconda --name transxpress
-mamba activate transxpress
-conda config --set channel_priority disabled
-mamba env update --file envs/default.yaml
+conda config --set channel_priority strict
+PIP_NO_BUILD_ISOLATION=0 conda env create --name transxpress --file envs/default.yaml
+conda activate transxpress
 ~~~~
-* (TIP: if you have a problem updating the default environment try putting python 3.9 into the *defaults.yaml* file)
+* `PIP_NO_BUILD_ISOLATION=0` lets pip build tmhmm.py with the numpy and Cython of the environment.
+* `envs/default.yaml` pins Snakemake 7.32.4, because Snakemake 8 and later have no `--cluster` option.
+
+5. Choose a folder for the conda environments of the pipeline rules and set it in `~/.bashrc`:
+~~~~
+export TRANSXPRESS_CONDA_PREFIX=/path/to/folder
+~~~~
+`TRANSXPRESS_CONDA_PREFIX` is a transXpress variable, not a Snakemake one. `transXpress.sh` passes it to the Snakemake option `--conda-prefix`. When you call `snakemake` directly, add `--conda-prefix "$TRANSXPRESS_CONDA_PREFIX"`. If the variable is not set, Snakemake builds the environments in `.snakemake/conda` in the run folder.
 
 
 6. Create a tab-separated file called *samples.txt* in the assembly directory describing where to find your raw read FASTQ files. Create this file with the following contents:
@@ -90,34 +96,42 @@ mamba env update --file envs/default.yaml
 
 8. Setup other conda environments (This will take a while):
 ~~~~
-snakemake --use-conda --conda-frontend mamba --conda-create-envs-only --cores 10
+snakemake --use-conda --conda-frontend conda --conda-prefix "$TRANSXPRESS_CONDA_PREFIX" --conda-create-envs-only --cores 1
 ~~~~
 
 9. Install SignalP 6.0 (fast):
       * Download SignalP 6.0 fast from https://services.healthtech.dtu.dk/services/SignalP-6.0/ (go to Downloads)
       * Unpack and install signalp:
         ~~~~
-         mamba env create -f envs/signalp.yaml
-         mamba activate signalp
+         conda env create -f envs/signalp.yaml
+         conda activate signalp
          tar zxvf signalp-6.0h.fast.tar.gz
          cd signalp6_fast
          pip install signalp-6-package/
          SIGNALP_DIR=$(python -c "import signalp; import os; print(os.path.dirname(signalp.__file__))" )
          cp -r signalp-6-package/models/* $SIGNALP_DIR/model_weights/
-         mamba deactivate
+         conda deactivate
         ~~~~
         (make sure the conda python is used, or use the full path to python from your conda installation)
 
 10. Install TargetP 2.0:
       * Download TargetP 2.0 from https://services.healthtech.dtu.dk/software.php
-      * extract the tarball and add path to targetp /bin/ folder to the PATH variable
+      * extract the tarball and add the targetp `bin` folder to the PATH of the targetp environment, with an activation script:
         ~~~~
-         mamba env create -f envs/targetp.yaml
-         mamba activate targetp
+         conda env create -f envs/targetp.yaml
+         conda activate targetp
          tar zxvf targetp-2.0.Linux.tar.gz
-         export PATH=$PATH:`pwd`/targetp-2.0/bin
-         mamba deactivate
+         mkdir -p "$CONDA_PREFIX/etc/conda/activate.d" "$CONDA_PREFIX/etc/conda/deactivate.d"
+         printf 'export _TARGETP_OLD_PATH="$PATH"\nexport PATH="$PATH:%s/targetp-2.0/bin"\n' "$(pwd)" > "$CONDA_PREFIX/etc/conda/activate.d/targetp.sh"
+         printf 'export PATH="$_TARGETP_OLD_PATH"\nunset _TARGETP_OLD_PATH\n' > "$CONDA_PREFIX/etc/conda/deactivate.d/targetp.sh"
+         conda deactivate
         ~~~~
+        (the script holds the full path of the `targetp-2.0` folder. If you move the folder, edit the path in `$CONDA_PREFIX/etc/conda/activate.d/targetp.sh`.)
+
+## Notes on results
+
+* `download_sprot` downloads the current Swiss-Prot release, so BLAST hits can differ between runs.
+* In a run folder made by an older transXpress version, add `--rerun-triggers mtime` to the Snakemake command to keep the old results. The default triggers also look at code and parameter changes and would run the rules again.
 
 ## Running transXpress
 

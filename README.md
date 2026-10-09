@@ -158,6 +158,14 @@ snakemake --profile profiles/slurm "$@"
 ~~~~
 The folder `profiles/slurm` holds a profile `config.yaml` for Slurm. You can find more profiles [here](https://github.com/snakemake-profiles/doc)
 
+### Running the main Snakemake process on a Slurm cluster
+
+The main Snakemake process needs the `transxpress` environment. Run it in its own job and activate the environment first. Replace the two paths with yours:
+~~~
+sbatch --time=5-00:00:00 --mem=4G -o main.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate /path/to/transxpress-env && bash /path/to/transXpress/transXpress.sh'
+~~~
+The time is the limit for the whole run.
+
 ### Running specific steps
 
 You can run specific steps of the pipeline by specifying a rule or a resulting file:

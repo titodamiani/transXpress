@@ -679,7 +679,7 @@ rule rnaspades:
   conda:
     "envs/rnaspades.yaml"
   params:
-    memory="200"
+    memory="300"
   threads:
     16
   shell:

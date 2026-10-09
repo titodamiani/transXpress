@@ -154,9 +154,9 @@ snakemake --conda-frontend conda --use-conda --latency-wait 60 --jobs 10000 --cl
 
 Option 4 - define a profile and run snakemake with the profile:
 ~~~~
-snakemake --profile profiles/ "$@"
+snakemake --profile profiles/slurm "$@"
 ~~~~
-You can find example of a simple profile `config.yaml` for slurm in the `profiles` directory or [here](https://github.com/snakemake-profiles/doc)
+The folder `profiles/slurm` holds a profile `config.yaml` for Slurm. You can find more profiles [here](https://github.com/snakemake-profiles/doc)
 
 ### Running specific steps
 
@@ -173,11 +173,11 @@ You can run specific steps of the pipeline by specifying a rule or a resulting f
 or when using profiles:
 ~~~
 # run only the rules until the multiqc_before_trim rule to check quality of the input data
-snakemake multiqc_before_trim --profile profiles/ "$@"
+snakemake multiqc_before_trim --profile profiles/slurm "$@"
 ~~~
 ~~~
 # run only the rules to produce samples_trimmed.txt file
-snakemake samples_trimmed.txt --profile profiles/ "$@"
+snakemake samples_trimmed.txt --profile profiles/slurm "$@"
 ~~~
 
 ## Running tests
@@ -209,20 +209,9 @@ Load them to IGV: File -> Load from File -> select the *bowtie_alignments/{sampl
 ## Possible problems when executing on cluster systems
 
 ### Time limit
-Depending on the setup of your cluster you may have to add time option in the transXpress.sh script.
-If default time (depends on your cluster setup) for submitted job is not sufficient the job may be cancelled due to time limit.
+Slurm jobs need a time limit. The time of each rule is set in `profiles/slurm/config.yaml`: `default-resources` gives 4 hours, and `set-resources` gives longer times to the rules that need them. `transXpress.sh` uses this profile on Slurm clusters.
 
-If this is the case, add time option in submission command in transXpress.sh script.
-
-For example, in case of Slurm change
-~~~~
-snakemake --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm -n {threads} --mem {params.memory}GB" "$@"
-~~~~
-to
-~~~~
-snakemake --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm -n {threads} --mem {params.memory} --time=06:00:00" "$@"
-~~~~
-This sets time limit to 6 hours. You may have to use different time limit based on size of reads used for assembly. 
+If a job is cancelled because of the time limit, raise the time of that rule in `set-resources`. The time you need depends on the size of the reads used for the assembly.
 
 See https://github.com/trinityrnaseq/trinityrnaseq/wiki/Trinity-Computing-Requirements
 

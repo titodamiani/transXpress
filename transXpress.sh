@@ -30,7 +30,7 @@ case "$CLUSTER" in
   ;;
 "SLURM")
   echo "Submitting snakemake jobs to SLURM cluster"
-  snakemake "${CONDA_PREFIX_ARGS[@]}" --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm -n {threads} --mem {params.memory}GB" "$@"
+  snakemake --profile "$(dirname "$0")/profiles/slurm" "${CONDA_PREFIX_ARGS[@]}" "$@"
   ;;
 "PBS")
   echo "Submitting snakemake jobs to PBS/Torque cluster"

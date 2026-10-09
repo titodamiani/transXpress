@@ -1,0 +1,31 @@
+# profile config.yaml for a slurm cluster
+# The cluster picks the partition from the time and memory of each job.
+# If your cluster needs a partition name, add --partition=<name> to the sbatch line below.
+
+cluster:
+  sbatch
+    --nodes=1
+    --cpus-per-task={threads}
+    --mem={params.memory}GB
+    --time={resources.time}
+    -o {log}.slurm
+    --parsable
+
+# time limits for jobs which need more than the default time
+set-resources:
+  - sprot_blastx_parallel:time="12:00:00"
+  - trinity_butterfly_parallel:time="12:00:00"
+  - kallisto:time="12:00:00"
+  - trinity_final:time="2-00:00:00"
+  - align_reads:time="3-00:00:00"
+  - rnaspades:time="3-00:00:00"
+  - trinity_inchworm_chrysalis:time="5-00:00:00"
+
+default-resources:
+  - time="4:00:00"
+restart-times: 1
+latency-wait: 60
+jobs: 500
+rerun-incomplete: True
+conda-frontend: "conda"
+use-conda: True

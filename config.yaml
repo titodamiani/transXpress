@@ -72,6 +72,6 @@ dispersion: "0.1"
 # If you want to use specified lineage you can change this parameter
 # by specifying the lineage.
 # For example:
-# lineage: "viridiplantae_odb12"
+# lineage: "eudicots_odb10"
 # You can list all possible lineages by running "busco --list-datasets"
-lineage: "viridiplantae_odb12"
+lineage: "eudicots_odb10"

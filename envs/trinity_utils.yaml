@@ -3,6 +3,9 @@ channels:
   - bioconda
 dependencies:
   - trinity=2.13.2=hea94271_3
+  # Trinity calls salmon with --validateMappings, which salmon 2 removed.
+  # The bioconda trinity recipe sets no bound, so salmon must be pinned here.
+  - salmon=1.10.3
   - bioconductor-edger=3.36.0=r41hc247a5b_2
   - kallisto=0.48.0=h15996b6_2
   - r=4.1=r41hd8ed1ab_1006

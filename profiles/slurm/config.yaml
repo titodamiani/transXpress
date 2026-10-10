@@ -23,6 +23,10 @@ set-resources:
 
 default-resources:
   - time="4:00:00"
+# Asks Slurm for the state of each job. Without it, Snakemake waits for the job
+# to write a marker file, and a job killed by the node writes none.
+# Snakemake looks for the script next to this file.
+cluster-status: slurm-status.sh
 restart-times: 1
 latency-wait: 60
 # Trinity splits the Butterfly stage into 1000 chunks, so this number is the size

@@ -223,11 +223,13 @@ If a job is cancelled because of the time limit, raise the time of that rule in 
 
 See https://github.com/trinityrnaseq/trinityrnaseq/wiki/Trinity-Computing-Requirements
 
-### Pipeline hangs when cluster cancels the job
-It is possible that cluster cancels the job, but pipeline seems to be still running. This can happen because the pipeline does not receive information whether cluster job completed successfully, failed or is still running. You can add `--cluster-status` option and add script which detects the job status. 
+### How the pipeline learns that a cluster job stopped
+Snakemake asks the cluster for the state of each job it submitted. Without that, Snakemake waits for the job to write a marker file, and a job stopped by the node, by the kernel or by `scancel` writes no marker. Snakemake then waits for that job for ever, with an empty queue and no error message.
 
-See https://snakemake.readthedocs.io/en/stable/tutorial/additional_features.html#using-cluster-status
+On Slurm, `profiles/slurm/config.yaml` sets `cluster-status: slurm-status.sh`. The script maps the Slurm job state to the three words Snakemake expects. It answers most checks from a `squeue` listing it caches in `.snakemake/slurm-status-cache` for 60 seconds, and asks `sacct` only about a job that has left the queue, which keeps the load on the cluster to about one query per minute.
 
-Alternatively, you can use snakemake [profiles](https://github.com/Snakemake-Profiles/doc) which also contain status checking script. 
+A state the script does not recognise counts as a failure, so an unknown state stops the job instead of holding up the run. `restart-times` in the same profile then gives the job another try. When Slurm does not answer at all, the script reports the job as still running, so a cluster outage does not end the run.
 
-See https://snakemake.readthedocs.io/en/v5.1.4/executable.html#profiles 
+For the job state names, see https://slurm.schedmd.com/sacct.html
+
+On LSF and PBS, `transXpress.sh` passes `--cluster` without a status command, so a job that the cluster stops can still leave Snakemake waiting. Write a status script for your scheduler and pass it with `--cluster-status`.

@@ -25,7 +25,9 @@ default-resources:
   - time="4:00:00"
 restart-times: 1
 latency-wait: 60
-jobs: 500
+# Trinity splits the Butterfly stage into 1000 chunks, so this number is the size
+# of the queue during that stage. Keep it low enough that one node is not filled.
+jobs: 100
 rerun-incomplete: True
 conda-frontend: "conda"
 use-conda: True

@@ -586,7 +586,10 @@ rule trinity_butterfly_parallel:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="10"
+    # A measured chunk job peaks near 550 MB. This rule has one instance per
+    # chunk, up to 1000 of them, so an oversized request here decides how many
+    # land on one node and leaves the rest of its cores idle.
+    memory="3"
   threads:
     1
   shell:

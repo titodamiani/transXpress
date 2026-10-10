@@ -657,13 +657,23 @@ rule trinity_final:
       exit 1
     fi
 
+    # Trinity ticks off its last step with trinity_out_dir/__salmon_filt.chkpts/salmon.filt.ok and does not
+    # check that the file that step wrote is still in place. With the tick of an earlier assembly present,
+    # Trinity skips the one command that writes {output.transcriptome}, prints "Trinity.fasta 0 MByte" and
+    # exits 0 with no assembly. So the ticks and the half-finished output of an earlier assembly go first.
+    rm -rf trinity_out_dir/__salmon_filt.chkpts trinity_out_dir/Trinity.tmp.fasta &>> {log}
+
     Trinity --max_memory {params.memory}G --CPU {threads} --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
 
     # read_partitions holds one folder per read cluster (can be millions of files) and is not needed after the assembly
-    # rename first, so that a half-deleted folder is never left under its real name
-    rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
-    mv trinity_out_dir/read_partitions trinity_out_dir/read_partitions.deleting &>> {log}
-    rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
+    # Delete it only once the assembly is in place. Trinity can exit 0 without writing it, and read_partitions
+    # is the only input the assembly can be repeated from, so deleting it on a failed run loses the run.
+    if [ -s {output.transcriptome} ] && [ -s {output.gene_trans_map} ]; then
+      # rename first, so that a half-deleted folder is never left under its real name
+      rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
+      mv trinity_out_dir/read_partitions trinity_out_dir/read_partitions.deleting &>> {log}
+      rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
+    fi
     """
 
 

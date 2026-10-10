@@ -2,4 +2,7 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - transdecoder
+  # The Snakefile calls TransDecoder.LongOrfs and TransDecoder.Predict.
+  # TransDecoder 6 replaces both with a single TransDecoder wrapper command,
+  # so the version is pinned below 6.
+  - transdecoder=5.7.1

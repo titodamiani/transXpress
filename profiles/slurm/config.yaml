@@ -9,6 +9,8 @@
 # runs, so a constraint that names the processor generation belongs here.
 # The extra resource applies to one rule, through set-resources below, for example
 #   - rnaspades:extra="--nodelist=node42"
+# Snakemake formats the sbatch line before a shell sees it, so a brace that the
+# shell has to read is written twice.
 
 cluster:
   sbatch
@@ -19,7 +21,7 @@ cluster:
     -o {log}.slurm
     --parsable
     {resources.extra}
-    ${TRANSXPRESS_SBATCH_EXTRA:-}
+    ${{TRANSXPRESS_SBATCH_EXTRA:-}}
 
 # time limits for jobs which need more than the default time
 set-resources:

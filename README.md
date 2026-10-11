@@ -132,6 +132,8 @@ snakemake --use-conda --conda-frontend conda --conda-prefix "$TRANSXPRESS_CONDA_
 
 * `download_sprot` downloads the current Swiss-Prot release, so BLAST hits can differ between runs.
 * In a run folder made by an older transXpress version, add `--rerun-triggers mtime` to the Snakemake command to keep the old results. The default triggers also look at code and parameter changes and would run the rules again.
+* The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `run_info.txt` in the run folder records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades`, `trinity_inchworm_chrysalis` and `trinity_final` name the machine each one ran on.
+* Trinity does not repeat an assembly, by its own documentation. Its Butterfly stage runs in parallel chunks whose results are collected in the order they finish. Use rnaSPAdes for an assembly that has to be repeatable.
 
 ## Running transXpress
 
@@ -233,3 +235,22 @@ A state the script does not recognise counts as a failure, so an unknown state s
 For the job state names, see https://slurm.schedmd.com/sacct.html
 
 On LSF and PBS, `transXpress.sh` passes `--cluster` without a status command, so a job that the cluster stops can still leave Snakemake waiting. Write a status script for your scheduler and pass it with `--cluster-status`.
+
+### Flags that belong to your cluster
+Some sbatch flags are site specific: a node to avoid, a processor generation to insist on, an account to charge. `profiles/slurm/config.yaml` takes them in two places, and both are empty by default.
+
+`TRANSXPRESS_SBATCH_EXTRA` applies to every job of a run. Export it before you start the pipeline:
+~~~~
+export TRANSXPRESS_SBATCH_EXTRA="--constraint=gen-d --exclude=badnode1"
+./transXpress.sh
+~~~~
+
+An assembly that is to be compared with another one needs the same processor on both runs, so a constraint that names the CPU generation goes here. Note that Slurm records no processor model, so a feature such as `gen-d` is as close as a constraint gets.
+
+The `extra` resource applies to one rule. Put it in `set-resources` in the same profile, for a rule that has to land on a named node:
+~~~~
+set-resources:
+  - rnaspades:extra="--nodelist=node42"
+~~~~
+
+Each job needs a time limit, so `--time` stays on the sbatch line and does not belong in either hook.

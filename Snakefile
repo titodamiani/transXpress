@@ -617,6 +617,13 @@ rule trinity_inchworm_chrysalis:
     """
     # record the computer this ran on, because the assembly depends on it
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
+
+    # Trinity ticks off the step that writes {output} with trinity_out_dir/recursive_trinity.cmds.ok and
+    # does not check that the file that step wrote is still in place. trinity_final consumes the file and
+    # leaves recursive_trinity.cmds.completed behind, so after a pass the tick is there and the file is
+    # not. Trinity then skips the step, exits 0 and writes no output. So the tick goes first.
+    rm -f trinity_out_dir/recursive_trinity.cmds.ok &>> {log}
+
     Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
     """
 

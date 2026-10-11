@@ -74,4 +74,4 @@ dispersion: "0.1"
 # For example:
 # lineage: "eudicots_odb10"
 # You can list all possible lineages by running "busco --list-datasets"
-lineage: "eudicots_odb10"
+lineage: "viridiplantae_odb12"

@@ -24,7 +24,7 @@ configfile: "config.yaml"
 # https://github.com/griffithlab/rnaseq_tutorial/wiki/Trinity-Assembly-And-Analysis
 
 # These rules don't need to be sent to a cluster
-localrules: all, clean, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
+localrules: all, clean, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
 
 rule all:
@@ -50,7 +50,8 @@ rule all:
     "multiqc_after_trim.txt",
     "WARNING_fastqc_before_trim_overview.txt",
     "FastQC_comparison_after_trim.txt",
-    "edgeR_trans"
+    "edgeR_trans",
+    "run_info.txt"
 
 rule clean:
   """
@@ -62,8 +63,71 @@ rule clean:
     if [ -f samples_trimmed.txt ]; then
       cut -f 2 < samples_trimmed.txt | xargs --no-run-if-empty rm -rf
     fi
-    rm -rf trinity_* rnaspades_* tmp* log TMHMM* kallisto* transcriptome* pipeliner* annotation* transdecoder* trimmomatic* samples_trimmed* ExN50_plot.pdf multiqc fastqc edgeR_trans
+    rm -rf trinity_* rnaspades_* tmp* log TMHMM* kallisto* transcriptome* pipeliner* annotation* transdecoder* trimmomatic* samples_trimmed* ExN50_plot.pdf multiqc fastqc edgeR_trans run_info.txt
     """
+
+
+rule run_info:
+  """
+  Records the computer the pipeline ran on and the transXpress commit.
+  The assembly depends on the hardware, the assembler version and the thread
+  count, so a later run can be compared against this one.
+  """
+  output:
+    "run_info.txt"
+  params:
+    memory="2"
+  threads:
+    1
+  run:
+    import platform
+    import socket
+    import subprocess
+
+    def field(path, key):
+      try:
+        with open(path) as handle:
+          for line in handle:
+            if line.startswith(key):
+              return line.split(":", 1)[-1].strip()
+      except OSError:
+        pass
+      return ""
+
+    cpu = field("/proc/cpuinfo", "model name") or platform.processor() or platform.machine()
+    memory_total = field("/proc/meminfo", "MemTotal") or "unknown"
+
+    os_name = ""
+    try:
+      with open("/etc/os-release") as handle:
+        for line in handle:
+          if line.startswith("PRETTY_NAME="):
+            os_name = line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+      pass
+    if not os_name:
+      os_name = platform.platform()
+
+    try:
+      commit = subprocess.check_output(
+        ["git", "-C", workflow.basedir, "rev-parse", "HEAD"],
+        stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+      commit = "unknown"
+
+    with open(output[0], "w") as out:
+      out.write("host\t%s\n" % socket.gethostname())
+      out.write("cpu\t%s\n" % cpu)
+      out.write("cores\t%s\n" % os.cpu_count())
+      out.write("memory_total\t%s\n" % memory_total)
+      out.write("os\t%s\n" % os_name)
+      out.write("kernel\t%s %s %s\n" % (platform.system(), platform.release(), platform.machine()))
+      out.write("python\t%s\n" % platform.python_version())
+      out.write("transxpress_commit\t%s\n" % commit)
+      out.write("assembler\t%s\n" % config["assembler"])
+      out.write("assembler_threads\t%s\n" % (
+        config.get("rnaspades_threads", 32) if config["assembler"] == "rnaspades"
+        else config.get("trinity_final_threads", 16)))
 
 
 rule fastqc_before_trim:
@@ -321,6 +385,8 @@ rule trimmomatic_parallel:
     8
   shell:
     """
+    # record the computer this ran on, because the assembly depends on it
+    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
     # note: trimmomatic can use gzipped files directly
     read SAMPLE REPLICATE F_READS R_READS < {input}
     # If the sample line is empty, ignore it
@@ -329,10 +395,10 @@ rule trimmomatic_parallel:
       exit 0
     fi
     if [ ! -z "$R_READS" ]; then
-      trimmomatic PE -threads {threads} $F_READS $R_READS trimmomatic/{wildcards[job_index]}.R1-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R1-U.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-U.qtrim.fastq.gz {config[trimmomatic_parameters]} &> {log}
+      trimmomatic PE -threads {threads} $F_READS $R_READS trimmomatic/{wildcards[job_index]}.R1-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R1-U.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-U.qtrim.fastq.gz {config[trimmomatic_parameters]} &>> {log}
       echo $SAMPLE	$REPLICATE	trimmomatic/{wildcards[job_index]}.R1-P.qtrim.fastq.gz	trimmomatic/{wildcards[job_index]}.R2-P.qtrim.fastq.gz > {output} 2>> {log}
     else
-      trimmomatic SE -threads {threads} $F_READS trimmomatic/{wildcards[job_index]}.U.qtrim.fastq.gz {config[trimmomatic_parameters]} &> {log}
+      trimmomatic SE -threads {threads} $F_READS trimmomatic/{wildcards[job_index]}.U.qtrim.fastq.gz {config[trimmomatic_parameters]} &>> {log}
       echo $SAMPLE      $REPLICATE      trimmomatic/{wildcards[job_index]}.U.qtrim.fastq.gz > {output} 2>> {log}
     fi
     """
@@ -549,7 +615,9 @@ rule trinity_inchworm_chrysalis:
     config.get("trinity_inchworm_chrysalis_threads", 16)
   shell:
     """
-    Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &> {log}
+    # record the computer this ran on, because the assembly depends on it
+    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
+    Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
     """
 
 
@@ -648,6 +716,8 @@ rule trinity_final:
     config.get("trinity_final_threads", 16)
   shell:
     """
+    # record the computer this ran on, because the assembly depends on it
+    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
     # read_partitions is deleted after a successful assembly (see below), and Trinity needs it to collect the transcripts
     # Trinity does not partition the reads again while its own checkpoint files exist, so they must be removed first
     if [ ! -d trinity_out_dir/read_partitions ]; then
@@ -697,7 +767,9 @@ rule rnaspades:
     config.get("rnaspades_threads", 32)
   shell:
     """
-    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler {config[kmers]} &> {log}
+    # record the computer this ran on, because the assembly depends on it
+    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
+    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler {config[kmers]} &>> {log}
     ##Make a fake gene_trans_map file
     seqkit seq -n {output.transcriptome} | while read id ; do echo -e "$id\\t$id" ; done > {output.gene_trans_map} 2>> {log}
     """

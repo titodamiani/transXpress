@@ -33,3 +33,20 @@ e_value_threshold: "1e-6"
 
 # Dispersion value for edgeR differential expression analysis 
 dispersion: "0.1"
+
+# The test data is small, so these keep the smaller figures rather than the ones
+# the repository config.yaml sets for 18 libraries.
+rnaspades_memory: "300"
+rnaspades_threads: 16
+trinity_inchworm_chrysalis_memory: "200"
+trinity_inchworm_chrysalis_threads: 16
+trinity_final_memory: "200"
+trinity_final_threads: 16
+align_reads_memory: "100"
+align_reads_threads: 16
+kallisto_memory: "16"
+kallisto_threads: 8
+busco_memory: "10"
+busco_threads: 4
+transdecoder_predict_memory: "10"
+transdecoder_predict_threads: 1

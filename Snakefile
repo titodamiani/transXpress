@@ -79,9 +79,9 @@ rule fastqc_before_trim:
   conda:
     "envs/qc.yaml"
   params:
-    memory="4"
+    memory="6"
   threads:
-    1
+    8
   shell:
     """
     # run fastqc on input files
@@ -316,9 +316,9 @@ rule trimmomatic_parallel:
   conda:
     "envs/trimmomatic.yaml"
   params:
-    memory="10"
+    memory="4"
   threads:
-    4
+    8
   shell:
     """
     # note: trimmomatic can use gzipped files directly
@@ -376,9 +376,9 @@ rule fastqc_after_trim:
   conda:
     "envs/qc.yaml"
   params:
-    memory="4"
+    memory="6"
   threads:
-    1
+    8
   shell:
     """
     # run fastqc on input files
@@ -544,9 +544,9 @@ rule trinity_inchworm_chrysalis:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="200"
+    memory=config.get("trinity_inchworm_chrysalis_memory", "450")
   threads:
-    16
+    config.get("trinity_inchworm_chrysalis_threads", 16)
   shell:
     """
     Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &> {log}
@@ -643,9 +643,9 @@ rule trinity_final:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="200"
+    memory=config.get("trinity_final_memory", "450")
   threads:
-    16
+    config.get("trinity_final_threads", 16)
   shell:
     """
     # read_partitions is deleted after a successful assembly (see below), and Trinity needs it to collect the transcripts
@@ -692,9 +692,9 @@ rule rnaspades:
   conda:
     "envs/rnaspades.yaml"
   params:
-    memory="300"
+    memory=config.get("rnaspades_memory", "400")
   threads:
-    16
+    config.get("rnaspades_threads", 32)
   shell:
     """
     rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler {config[kmers]} &> {log}
@@ -770,10 +770,10 @@ rule busco:
   conda:
     "envs/busco.yaml"
   params:
-    memory="10",
+    memory=config.get("busco_memory", "10"),
     lineage=config.get("lineage", "")
   threads:
-    4
+    config.get("busco_threads", 16)
   shell:
     """
     # an empty or missing lineage lets BUSCO choose the lineage automatically
@@ -838,9 +838,9 @@ rule transdecoder_predict:
   conda:
     "envs/transdecoder.yaml"
   params:
-    memory="10"
+    memory=config.get("transdecoder_predict_memory", "6")
   threads:
-    1
+    config.get("transdecoder_predict_threads", 1)
   shell:
     """
     TransDecoder.Predict -t {input.transcriptome} --output_dir transdecoder --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &> {log}
@@ -865,9 +865,9 @@ checkpoint align_reads:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="100"
+    memory=config.get("align_reads_memory", "100")
   threads:
-    16
+    config.get("align_reads_threads", 16)
   shell:
     """
     # Remove old markers so the aligner runs again on the trimmed reads.
@@ -1193,9 +1193,9 @@ rule rfam_parallel:
   conda:
     "envs/rfam.yaml"
   params:
-    memory="8" # increased memory from 2 to 8 becuase it was not sufficient
+    memory="5"
   threads:
-    2
+    4
   shell:
     """
     cmscan -E {config[e_value_threshold]} --rfam --cpu {threads} --tblout {output} {input[db]} {input[fasta]} &> {log}
@@ -1240,7 +1240,7 @@ rule sprot_blastp_parallel:
   conda:
     "envs/blast.yaml"
   params:
-    memory="4"
+    memory="2"
   threads:
     2
   shell:
@@ -1263,9 +1263,9 @@ rule sprot_blastx_parallel:
   conda:
     "envs/blast.yaml"
   params:
-    memory="4"
+    memory="2"
   threads:
-    2
+    4
   shell:
     """
     blastx -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {config[e_value_threshold]} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
@@ -1360,7 +1360,7 @@ rule signalp_parallel:
   conda:
     "signalp"
   params:
-    memory="8"
+    memory="4"
   threads:
     1
   shell:
@@ -1385,7 +1385,7 @@ rule targetp_parallel:
   conda:
     "targetp"
   params:
-    memory="2"
+    memory="3"
   threads:
     1
   shell:
@@ -1413,9 +1413,9 @@ rule kallisto:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="16" # increased memory from 2 to 8 since it was not sufficient
+    memory=config.get("kallisto_memory", "20")
   threads:
-    8
+    config.get("kallisto_threads", 16)
   shell:
     """
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')

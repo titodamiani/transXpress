@@ -75,3 +75,27 @@ dispersion: "0.1"
 # lineage: "eudicots_odb10"
 # You can list all possible lineages by running "busco --list-datasets"
 lineage: "viridiplantae_odb12"
+
+# Memory in GB and the thread count of the rules whose size follows the dataset.
+# The values here suit about 420 million read pairs, which is 18 Illumina libraries.
+# Lower them for a smaller dataset. A rule that works on a fixed chunk of 1000
+# sequences keeps its size in the Snakefile, because that size holds at any
+# dataset size.
+# Keep the assembler thread count the same across runs you want to compare. The
+# assembly depends on it.
+rnaspades_memory: "400"
+rnaspades_threads: 32
+# The Trinity guide gives about 1 GB per million read pairs. This figure follows
+# that rule of thumb and is not measured.
+trinity_inchworm_chrysalis_memory: "450"
+trinity_inchworm_chrysalis_threads: 16
+trinity_final_memory: "450"
+trinity_final_threads: 16
+align_reads_memory: "100"
+align_reads_threads: 16
+kallisto_memory: "20"
+kallisto_threads: 16
+busco_memory: "10"
+busco_threads: 16
+transdecoder_predict_memory: "6"
+transdecoder_predict_threads: 1

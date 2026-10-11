@@ -624,6 +624,19 @@ rule trinity_inchworm_chrysalis:
     # not. Trinity then skips the step, exits 0 and writes no output. So the tick goes first.
     rm -f trinity_out_dir/recursive_trinity.cmds.ok &>> {log}
 
+    # trinity_final deletes read_partitions once the assembly is written, because it holds one folder per
+    # read cluster and can reach millions of files. Trinity does not partition the reads again while
+    # trinity_out_dir/partitioned_reads.files.list.ok is in place, and it leaves the top folder of
+    # read_partitions behind, so neither the folder nor its emptiness tells the two cases apart. Test the
+    # list itself: if the first read file it names is gone, the partitions are gone with it and every
+    # Butterfly chunk would stop on a missing input. A crashed run whose partitions are still in place
+    # keeps its tick, so its hours of partitioning are not repeated.
+    PARTITION_LIST=trinity_out_dir/partitioned_reads.files.list
+    if [ ! -s $PARTITION_LIST ] || [ ! -e "$(head -1 $PARTITION_LIST)" ]; then
+      echo "read partitions are missing, so Trinity partitions the reads again" &>> {log}
+      rm -f $PARTITION_LIST.ok &>> {log}
+    fi
+
     Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
     """
 

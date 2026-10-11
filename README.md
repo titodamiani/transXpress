@@ -250,7 +250,11 @@ An assembly that is to be compared with another one needs the same processor on 
 The `extra` resource applies to one rule. Put it in `set-resources` in the same profile, for a rule that has to land on a named node:
 ~~~~
 set-resources:
-  - rnaspades:extra="--nodelist=node42"
+  - rnaspades:extra=--nodelist=node42 --partition=bigmem
 ~~~~
+
+Write that value without quotes. A quoted value keeps its quotes, so sbatch reads two flags as one and rejects them with `Invalid specification`. A rule can hold both `extra` and a time limit, as two entries that name the same rule.
+
+A node name and a partition name usually travel together. The partition a cluster picks for the memory of a job does not have to be one that holds the node you named, and sbatch then answers `Requested node configuration is not available`.
 
 Each job needs a time limit, so `--time` stays on the sbatch line and does not belong in either hook.

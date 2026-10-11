@@ -8,7 +8,9 @@
 # An assembly that is to be compared with another one needs the same CPU on both
 # runs, so a constraint that names the processor generation belongs here.
 # The extra resource applies to one rule, through set-resources below, for example
-#   - rnaspades:extra="--nodelist=node42"
+#   - rnaspades:extra=--nodelist=node42 --partition=bigmem
+# Write that value without quotes. Quotes stay part of the value, so sbatch reads
+# two flags as one and rejects them.
 # Snakemake formats the sbatch line before a shell sees it, so a brace that the
 # shell has to read is written twice.
 

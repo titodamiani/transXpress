@@ -769,7 +769,14 @@ rule rnaspades:
     """
     # record the computer this ran on, because the assembly depends on it
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
-    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler {config[kmers]} &>> {log}
+    # --checkpoints last lets a crashed assembly restart from the last stage instead of from the start
+    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler --checkpoints last {config[kmers]} &>> {log}
+
+    # The checkpoint data is only useful to a restart, so it goes once the assembly is in place
+    if [ -s {output.transcriptome} ]; then
+      rm -rf rnaspades_out/*/saves rnaspades_out/saves &>> {log}
+    fi
+
     ##Make a fake gene_trans_map file
     seqkit seq -n {output.transcriptome} | while read id ; do echo -e "$id\\t$id" ; done > {output.gene_trans_map} 2>> {log}
     """

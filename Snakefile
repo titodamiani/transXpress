@@ -409,7 +409,8 @@ def trimmomatic_completed_parallel_jobs(wildcards):
   Returns names of files with information about files processed with trimmomatic.
   """
   parallel_dir = checkpoints.trimmomatic_split.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "sample_{job_index}")).job_index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "sample_{job_index}")).job_index)
   completed_ids = expand(os.path.join(parallel_dir,"completed_{job_index}"), job_index=job_ids)
   return completed_ids
 
@@ -692,7 +693,8 @@ def trinity_completed_parallel_jobs(wildcards):
   Returns filenames of the files processed in parallel.
   """
   parallel_dir = checkpoints.trinity_butterfly_split.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "job_{job_index}")).job_index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "job_{job_index}")).job_index)
   completed_ids = expand(os.path.join(parallel_dir,"completed_{job_index}"), job_index=job_ids)
   return completed_ids
 
@@ -1023,7 +1025,8 @@ checkpoint prepare_samples_for_IGV:
     """ 
 
 def get_igv(wildcards):
-  indeces = glob_wildcards("{sample}/bowtie2.bam").sample
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  indeces = sorted(glob_wildcards("{sample}/bowtie2.bam").sample)
   completed = expand(os.path.join("bowtie_alignments", "{sample}.sorted.bam.bai"),sample=indeces)
   return completed
 
@@ -1196,7 +1199,8 @@ def parallel_annotation_tasks_fasta(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_fasta.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "{index}.fasta" )).index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.fasta" )).index)
   completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1205,7 +1209,8 @@ def parallel_annotation_tasks_orfs(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_orfs.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index)
   completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1214,7 +1219,8 @@ def parallel_annotation_tasks_pep(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_pep.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index)
   completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 

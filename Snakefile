@@ -21,6 +21,28 @@ SPROT_RELEASE = str(config.get("sprot_release", "2026_03"))
 if not re.fullmatch(r"\d{4}_\d{2}", SPROT_RELEASE):
   raise ValueError("sprot_release must look like \"2026_03\", in quotes. The config gives %s" % SPROT_RELEASE)
 
+# The folder of the annotation databases. "db" keeps one copy in each run folder, which the
+# pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
+DB_DIR = str(config.get("db_dir", "db")).rstrip("/")
+DB_SHARED = DB_DIR != "db"
+LINEAGE = config.get("lineage", "")
+
+# The annotation rules run only after the fasta_split checkpoints, hours into a run, so a
+# shared folder is checked here, before any job starts.
+if DB_SHARED:
+  if not LINEAGE:
+    raise ValueError("A shared db_dir needs a named BUSCO lineage, for example lineage: \"viridiplantae_odb12\"")
+  db_missing = [path for path in [
+      DB_DIR + "/versions.txt",
+      DB_DIR + "/uniprot_sprot.fasta",
+      DB_DIR + "/Pfam-A.hmm",
+      DB_DIR + "/Rfam.cm",
+      DB_DIR + "/busco_downloads/lineages/" + LINEAGE]
+    if not os.path.exists(path)]
+  if db_missing:
+    raise ValueError("db_dir %s lacks:\n  %s\nFill the folder with the download_databases target, see README.md."
+      % (DB_DIR, "\n  ".join(db_missing)))
+
 # for executable in ["samtools", "bowtie2", "kallisto", "signalp6", "targetp", "Trinity", "blastx", "blastp", "makeblastdb", "cmscan", "hmmscan", "fastqc", "rnaspades.py", "seqkit", "R"]:
 #    if not shutil.which(executable):
 #        sys.stderr.write("Warning: Cannot find %s in your PATH\n" % (executable))
@@ -1318,7 +1340,7 @@ rule rfam_parallel:
   """
   input:
     fasta="annotations/chunks_fasta/{index}.fasta",
-    db="db/Rfam.cm"
+    db=DB_DIR + "/Rfam.cm"
   output:
     "annotations/rfam/{index}.out"
   log:
@@ -1341,7 +1363,7 @@ rule pfam_parallel:
   """
   input:
     fasta="annotations/chunks_orfs/{index}.orfs",
-    db="db/Pfam-A.hmm"
+    db=DB_DIR + "/Pfam-A.hmm"
   output:
     "annotations/pfam/{index}.out"
   log:
@@ -1365,7 +1387,7 @@ rule sprot_blastp_parallel:
   """
   input:
     fasta="annotations/chunks_orfs/{index}.orfs",
-    db="db/uniprot_sprot.fasta"
+    db=DB_DIR + "/uniprot_sprot.fasta"
   output:
     "annotations/sprotblastp/{index}.out"
   log:
@@ -1388,7 +1410,7 @@ rule sprot_blastx_parallel:
   """
   input:
     fasta="annotations/chunks_fasta/{index}.fasta",
-    db="db/uniprot_sprot.fasta"
+    db=DB_DIR + "/uniprot_sprot.fasta"
   output:
     "annotations/sprotblastx/{index}.out"
   log:
@@ -1591,142 +1613,200 @@ rule kallisto:
     """
 
  
-rule download_sprot:
-  """
-  Downloads the Swiss-Prot release named by sprot_release, checks its md5 and prepares it for BLAST.
-  UniProt serves only the newest release as a plain fasta file. An older release comes from the
-  release archive, which holds the same fasta file.
-  """
-  output:
-    fasta="db/uniprot_sprot.fasta",
-    version="db/uniprot_sprot.version"
-  log:
-    "logs/download_sprot.log"
-  conda:
-    "envs/blast.yaml"
-  params:
-    memory="2",
-    release=SPROT_RELEASE,
-    current_url="https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete",
-    archive_url="https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-" + SPROT_RELEASE + "/knowledgebase"
-  threads:
-    1
-  shell:
+# The download rules exist only when db_dir is "db", so a run never writes to a shared
+# database folder. A shared folder is filled once with the download_databases target.
+if not DB_SHARED:
+
+  localrules: download_databases
+
+  rule download_sprot:
     """
-    db=$(dirname {output.fasta})
+    Downloads the Swiss-Prot release named by sprot_release, checks its md5 and prepares it for BLAST.
+    UniProt serves only the newest release as a plain fasta file. An older release comes from the
+    release archive, which holds the same fasta file.
+    """
+    output:
+      fasta="db/uniprot_sprot.fasta",
+      version="db/uniprot_sprot.version"
+    log:
+      "logs/download_sprot.log"
+    conda:
+      "envs/blast.yaml"
+    params:
+      memory="2",
+      release=SPROT_RELEASE,
+      current_url="https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete",
+      archive_url="https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-" + SPROT_RELEASE + "/knowledgebase"
+    threads:
+      1
+    shell:
+      """
+      db=$(dirname {output.fasta})
 
-    # the release that UniProt serves as current
-    current_release() {{
-      wget -q -O - "{params.current_url}/reldate.txt" | awk '$1 == "UniProtKB/Swiss-Prot" && $2 == "Release" {{ print $3 }}'
-    }}
+      # the release that UniProt serves as current
+      current_release() {{
+        wget -q -O - "{params.current_url}/reldate.txt" | awk '$1 == "UniProtKB/Swiss-Prot" && $2 == "Release" {{ print $3 }}'
+      }}
 
-    # the md5 that the RELEASE.metalink file in folder $1 gives for file $2
-    metalink_md5() {{
-      wget -q -O - "$1/RELEASE.metalink" | awk -v name="$2" '/<file name=/ {{ f = index($0, "\\"" name "\\"") > 0 }} f && !found && /type="md5"/ {{ split($0, a, /[<>]/); print a[3]; found = 1 }}'
-    }}
+      # the md5 that the RELEASE.metalink file in folder $1 gives for file $2
+      metalink_md5() {{
+        wget -q -O - "$1/RELEASE.metalink" | awk -v name="$2" '/<file name=/ {{ f = index($0, "\\"" name "\\"") > 0 }} f && !found && /type="md5"/ {{ split($0, a, /[<>]/); print a[3]; found = 1 }}'
+      }}
 
-    before=$(current_release)
-    echo "Swiss-Prot release asked: {params.release}, current release: $before" > {log}
+      before=$(current_release)
+      echo "Swiss-Prot release asked: {params.release}, current release: $before" > {log}
 
-    if [ "$before" = "{params.release}" ]; then
-      download="$db/uniprot_sprot.fasta.gz"
-      wget -O "$download" "{params.current_url}/uniprot_sprot.fasta.gz" &>> {log}
-      expected=$(metalink_md5 "{params.current_url}" uniprot_sprot.fasta.gz)
-    else
-      archive="uniprot_sprot-only{params.release}.tar.gz"
-      download="$db/$archive"
-      if ! wget -O "$download" "{params.archive_url}/$archive" &>> {log}; then
-        echo "Swiss-Prot {params.release} is not the current release ($before) and has no archive at {params.archive_url}" >> {log}
+      if [ "$before" = "{params.release}" ]; then
+        download="$db/uniprot_sprot.fasta.gz"
+        wget -O "$download" "{params.current_url}/uniprot_sprot.fasta.gz" &>> {log}
+        expected=$(metalink_md5 "{params.current_url}" uniprot_sprot.fasta.gz)
+      else
+        archive="uniprot_sprot-only{params.release}.tar.gz"
+        download="$db/$archive"
+        if ! wget -O "$download" "{params.archive_url}/$archive" &>> {log}; then
+          echo "Swiss-Prot {params.release} is not the current release ($before) and has no archive at {params.archive_url}" >> {log}
+          exit 1
+        fi
+        expected=$(metalink_md5 "{params.archive_url}" "$archive")
+      fi
+
+      actual=$(md5sum "$download" | cut -d " " -f 1)
+      echo "md5 of $download: expected $expected, actual $actual" >> {log}
+      if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+        echo "The md5 does not match RELEASE.metalink" >> {log}
         exit 1
       fi
-      expected=$(metalink_md5 "{params.archive_url}" "$archive")
-    fi
 
-    actual=$(md5sum "$download" | cut -d " " -f 1)
-    echo "md5 of $download: expected $expected, actual $actual" >> {log}
-    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-      echo "The md5 does not match RELEASE.metalink" >> {log}
-      exit 1
-    fi
+      if [ "$before" = "{params.release}" ]; then
+        # UniProt could switch to a new release while the file downloads
+        after=$(current_release)
+        if [ "$after" != "$before" ]; then
+          echo "The current release changed from $before to $after during the download. Run the rule again." >> {log}
+          exit 1
+        fi
+      else
+        tar -xzf "$download" -C "$db" uniprot_sprot.fasta.gz &>> {log}
+        rm "$download"
+      fi
 
-    if [ "$before" = "{params.release}" ]; then
-      # UniProt could switch to a new release while the file downloads
-      after=$(current_release)
-      if [ "$after" != "$before" ]; then
-        echo "The current release changed from $before to $after during the download. Run the rule again." >> {log}
+      gunzip -f "$db/uniprot_sprot.fasta.gz" &>> {log}
+      makeblastdb -in {output.fasta} -dbtype prot &>> {log}
+      printf "Swiss-Prot\\t%s\\n" "{params.release}" > {output.version}
+      """
+
+
+  rule download_pfam:
+    """
+    Downloads the Pfam release named by pfam_release, checks its md5 and prepares it for hmmscan.
+    """
+    output:
+      hmm="db/Pfam-A.hmm",
+      version="db/Pfam-A.version"
+    log:
+      "logs/download_pfam.log"
+    conda:
+      "envs/pfam.yaml"
+    params:
+      memory="2",
+      release=PFAM_RELEASE,
+      url="https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam" + PFAM_RELEASE
+    threads:
+      1
+    shell:
+      """
+      wget -O {output.hmm}.gz "{params.url}/Pfam-A.hmm.gz" &> {log}
+      expected=$(wget -q -O - "{params.url}/md5_checksums" | awk '$2 == "Pfam-A.hmm.gz" {{ print $1 }}')
+      actual=$(md5sum {output.hmm}.gz | cut -d " " -f 1)
+      echo "md5 of Pfam-A.hmm.gz: expected $expected, actual $actual" >> {log}
+      if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+        echo "The md5 does not match md5_checksums of Pfam {params.release}" >> {log}
         exit 1
       fi
-    else
-      tar -xzf "$download" -C "$db" uniprot_sprot.fasta.gz &>> {log}
-      rm "$download"
-    fi
-
-    gunzip -f "$db/uniprot_sprot.fasta.gz" &>> {log}
-    makeblastdb -in {output.fasta} -dbtype prot &>> {log}
-    printf "Swiss-Prot\\t%s\\n" "{params.release}" > {output.version}
-    """
+      gunzip -f {output.hmm}.gz &>> {log}
+      # -f replaces index files left by an earlier attempt
+      hmmpress -f {output.hmm} &>> {log}
+      printf "Pfam\\t%s\\n" "{params.release}" > {output.version}
+      """
 
 
-rule download_pfam:
-  """
-  Downloads the Pfam release named by pfam_release, checks its md5 and prepares it for hmmscan.
-  """
-  output:
-    hmm="db/Pfam-A.hmm",
-    version="db/Pfam-A.version"
-  log:
-    "logs/download_pfam.log"
-  conda:
-    "envs/pfam.yaml"
-  params:
-    memory="2",
-    release=PFAM_RELEASE,
-    url="https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam" + PFAM_RELEASE
-  threads:
-    1
-  shell:
+  rule download_rfam:
     """
-    wget -O {output.hmm}.gz "{params.url}/Pfam-A.hmm.gz" &> {log}
-    expected=$(wget -q -O - "{params.url}/md5_checksums" | awk '$2 == "Pfam-A.hmm.gz" {{ print $1 }}')
-    actual=$(md5sum {output.hmm}.gz | cut -d " " -f 1)
-    echo "md5 of Pfam-A.hmm.gz: expected $expected, actual $actual" >> {log}
-    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-      echo "The md5 does not match md5_checksums of Pfam {params.release}" >> {log}
-      exit 1
-    fi
-    gunzip -f {output.hmm}.gz &>> {log}
-    # -f replaces index files left by an earlier attempt
-    hmmpress -f {output.hmm} &>> {log}
-    printf "Pfam\\t%s\\n" "{params.release}" > {output.version}
+    Downloads the Rfam release named by rfam_release and prepares it for cmscan.
+    Rfam publishes no checksum, so the file is not checked.
     """
+    output:
+      cm="db/Rfam.cm",
+      version="db/Rfam.version"
+    log:
+      "logs/download_rfam.log"
+    conda:
+      "envs/rfam.yaml"
+    params:
+      memory="2",
+      release=RFAM_RELEASE,
+      url="https://ftp.ebi.ac.uk/pub/databases/Rfam/" + RFAM_RELEASE
+    threads:
+      1
+    shell:
+      """
+      wget -O {output.cm}.gz "{params.url}/Rfam.cm.gz" &> {log}
+      gunzip -f {output.cm}.gz &>> {log}
+      # -F replaces index files left by an earlier attempt
+      cmpress -F {output.cm} &>> {log}
+      printf "Rfam\\t%s\\n" "{params.release}" > {output.version}
+      """
 
 
-rule download_rfam:
-  """
-  Downloads the Rfam release named by rfam_release and prepares it for cmscan.
-  Rfam publishes no checksum, so the file is not checked.
-  """
-  output:
-    cm="db/Rfam.cm",
-    version="db/Rfam.version"
-  log:
-    "logs/download_rfam.log"
-  conda:
-    "envs/rfam.yaml"
-  params:
-    memory="2",
-    release=RFAM_RELEASE,
-    url="https://ftp.ebi.ac.uk/pub/databases/Rfam/" + RFAM_RELEASE
-  threads:
-    1
-  shell:
+  rule download_busco_lineage:
     """
-    wget -O {output.cm}.gz "{params.url}/Rfam.cm.gz" &> {log}
-    gunzip -f {output.cm}.gz &>> {log}
-    # -F replaces index files left by an earlier attempt
-    cmpress -F {output.cm} &>> {log}
-    printf "Rfam\\t%s\\n" "{params.release}" > {output.version}
+    Downloads the BUSCO lineage named by lineage into db/busco_downloads, for a shared database
+    folder. A run with db_dir "db" does not read this copy: BUSCO downloads its own lineage.
     """
+    output:
+      directory("db/busco_downloads/lineages/" + LINEAGE)
+    log:
+      "logs/download_busco_lineage.log"
+    conda:
+      "envs/busco.yaml"
+    params:
+      memory="2",
+      lineage=LINEAGE
+    threads:
+      1
+    shell:
+      """
+      # --download has to come last on the busco command line
+      busco --download_path db/busco_downloads --download {params.lineage} &> {log}
+      """
+
+
+  rule download_databases:
+    """
+    Downloads the annotation databases and the BUSCO lineage into db/ and lists their releases in
+    db/versions.txt. Run it once in a new folder to fill a shared database folder.
+    """
+    input:
+      versions=["db/uniprot_sprot.version", "db/Pfam-A.version", "db/Rfam.version"],
+      lineage=["db/busco_downloads/lineages/" + LINEAGE] if LINEAGE else []
+    output:
+      "db/versions.txt"
+    params:
+      memory="2"
+    threads:
+      1
+    run:
+      with open(output[0], "w") as out:
+        for path in input.versions:
+          with open(path) as handle:
+            out.write(handle.read())
+        for path in input.lineage:
+          fields = {}
+          with open(os.path.join(path, "dataset.cfg")) as handle:
+            for line in handle:
+              if "=" in line:
+                key, value = line.strip().split("=", 1)
+                fields[key] = value
+          out.write("BUSCO\t%s\t%s\n" % (fields.get("name", os.path.basename(path)), fields.get("creation_date", "unknown")))
 
 
 rule download_eggnog:

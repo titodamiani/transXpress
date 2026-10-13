@@ -76,6 +76,12 @@ dispersion: "0.1"
 # You can list all possible lineages by running "busco --list-datasets"
 lineage: "viridiplantae_odb12"
 
+# Folder of the annotation databases and the BUSCO lineage.
+# "db" keeps one copy in each run folder, which the pipeline downloads.
+# Any other folder is a shared copy that the pipeline only reads.
+# See "Annotation databases" in README.md.
+db_dir: "db"
+
 # Releases of the annotation databases. Keep the quotes.
 # Pfam releases: https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/
 # Rfam releases: https://ftp.ebi.ac.uk/pub/databases/Rfam/

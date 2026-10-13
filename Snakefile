@@ -725,8 +725,9 @@ rule trinity_butterfly_parallel_merge:
     # stops near 2900 chunks with "Argument list too long", see
     # https://bitbucket.org/snakemake/snakemake/issues/878/errno-7-argument-list-too-long-path-to-bin
     # xargs passes the files to cat in calls that fit the limit, so the chunk count has no limit here.
-    # The chunk suffixes have a fixed width, so sort gives the order of the split.
-    {{ find trinity_out_dir/parallel_jobs -maxdepth 1 -name 'completed_*' | LC_ALL=C sort | xargs -r cat ; }} > {output.cmds_completed} 2> {log}
+    # The list comes from the job_ files, as the rule input does, so a stray completed_ file is not read
+    # and a missing one stops cat. The chunk suffixes have a fixed width, so sort gives the order of the split.
+    {{ find trinity_out_dir/parallel_jobs -maxdepth 1 -name 'job_*' | LC_ALL=C sort | sed 's|/job_|/completed_|' | xargs -r cat ; }} > {output.cmds_completed} 2> {log}
     """
 
 

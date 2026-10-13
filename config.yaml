@@ -99,3 +99,9 @@ busco_memory: "10"
 busco_threads: 16
 transdecoder_predict_memory: "6"
 transdecoder_predict_threads: 1
+
+# Trinity Butterfly runs its commands in chunks, one Slurm job per chunk. A chunk
+# holds at least trinity_butterfly_cmds_per_chunk commands, and there are at most
+# trinity_butterfly_max_chunks chunks.
+trinity_butterfly_cmds_per_chunk: 20
+trinity_butterfly_max_chunks: 1000

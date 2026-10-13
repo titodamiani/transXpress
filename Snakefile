@@ -653,12 +653,21 @@ checkpoint trinity_butterfly_split:
     directory("trinity_out_dir/parallel_jobs")
   log:
     "logs/trinity_split.log"
+  params:
+    cmds_per_chunk=config.get("trinity_butterfly_cmds_per_chunk", 20),
+    max_chunks=config.get("trinity_butterfly_max_chunks", 1000)
   shell:
     """
     mkdir -p {output} &> {log}
+    # Each chunk is one Slurm job. A chunk holds at least cmds_per_chunk commands, so small data runs
+    # a few jobs, and there are at most max_chunks chunks, so large data does not submit more jobs.
+    COMMANDS=$(wc -l < {input})
+    CHUNKS=$(( (COMMANDS + {params.cmds_per_chunk} - 1) / {params.cmds_per_chunk} ))
+    if [ $CHUNKS -gt {params.max_chunks} ]; then CHUNKS={params.max_chunks}; fi
+    if [ $CHUNKS -lt 1 ]; then CHUNKS=1; fi
+    echo "$COMMANDS commands in $CHUNKS chunks" &>> {log}
     # Note: it is important to use -d and not --numeric-suffixes, see https://github.com/transXpress/transXpress-snakemake/issues/12
-    # Note #2: we split into 1000 chunks to avoid running over the command line limit when too many parallel jobs are created, see https://bitbucket.org/snakemake/snakemake/issues/878/errno-7-argument-list-too-long-path-to-bin 
-    split -n l/1000 -e -d {input} {output}/job_ &>> {log}
+    split -n l/$CHUNKS -e -d {input} {output}/job_ &>> {log}
     """
 
 
@@ -676,7 +685,7 @@ rule trinity_butterfly_parallel:
     "envs/trinity_utils.yaml"
   params:
     # A measured chunk job peaks near 550 MB. This rule has one instance per
-    # chunk, up to 1000 of them, so an oversized request here decides how many
+    # chunk, up to trinity_butterfly_max_chunks of them, so an oversized request here decides how many
     # land on one node and leaves the rest of its cores idle.
     memory="3"
   threads:

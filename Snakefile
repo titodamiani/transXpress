@@ -765,6 +765,11 @@ rule trinity_final:
       rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
       mv trinity_out_dir/read_partitions trinity_out_dir/read_partitions.deleting &>> {log}
       rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
+    else
+      # fail here, so the log names the cause and Snakemake does not report only a missing output file
+      echo "ERROR: Trinity exited 0 but did not write {output.transcriptome} and {output.gene_trans_map}." | tee -a {log} >&2
+      echo "trinity_out_dir/read_partitions is kept, so the assembly can run again. See {log}" | tee -a {log} >&2
+      exit 1
     fi
     """
 

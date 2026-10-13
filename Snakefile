@@ -678,6 +678,9 @@ rule trinity_butterfly_parallel:
   input:
     "trinity_out_dir/parallel_jobs/job_{job_index}"
   output:
+    # Keep this inside parallel_jobs. Each split deletes the folder, so every chunk runs again. After
+    # trinity_inchworm_chrysalis runs again, the job_ files can hold the same commands, and Snakemake
+    # skips a chunk whose job_ file has the same content and whose output sits in another folder.
     "trinity_out_dir/parallel_jobs/completed_{job_index}"
   log:
     "logs/trinity_parallel{job_index}.log"

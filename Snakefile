@@ -1680,7 +1680,7 @@ if not DB_SHARED:
       fi
 
       if [ "$before" = "{params.release}" ]; then
-        # UniProt could switch to a new release while the file downloads
+        # UniProt could switch to the next release while the file downloads
         after=$(current_release)
         if [ "$after" != "$before" ]; then
           echo "The current release changed from $before to $after during the download. Run the rule again." >> {log}
@@ -1785,7 +1785,7 @@ if not DB_SHARED:
   rule download_databases:
     """
     Downloads the annotation databases and the BUSCO lineage into db/ and lists their releases in
-    db/versions.txt. Run it once in a new folder to fill a shared database folder.
+    db/versions.txt. Run it once in an empty folder to fill a shared database folder.
     """
     input:
       versions=["db/uniprot_sprot.version", "db/Pfam-A.version", "db/Rfam.version"],

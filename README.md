@@ -130,7 +130,8 @@ snakemake --use-conda --conda-frontend conda --conda-prefix "$TRANSXPRESS_CONDA_
 
 ## Notes on results
 
-* `download_sprot` downloads the current Swiss-Prot release, so BLAST hits can differ between runs.
+* Swiss-Prot, Pfam and Rfam have fixed releases, set in `config.yaml`. See [Annotation databases](#annotation-databases).
+* With the default `db_dir: "db"`, BUSCO downloads the newest dataset of its lineage, so BUSCO scores can differ between runs months apart. A shared `db_dir` keeps one lineage dataset for every run.
 * In a run folder made by an older transXpress version, add `--rerun-triggers mtime` to the Snakemake command to keep the old results. The default triggers also look at code and parameter changes and would run the rules again.
 * The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `run_info.txt` in the run folder records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades`, `trinity_inchworm_chrysalis` and `trinity_final` name the machine each one ran on.
 * Trinity does not repeat an assembly, by its own documentation. Its Butterfly stage runs in parallel chunks whose results are collected in the order they finish. Use rnaSPAdes for an assembly that has to be repeatable.
@@ -189,6 +190,42 @@ snakemake multiqc_before_trim --profile profiles/slurm "$@"
 # run only the rules to produce samples_trimmed.txt file
 snakemake samples_trimmed.txt --profile profiles/slurm "$@"
 ~~~
+
+## Annotation databases
+
+transXpress annotates the transcripts with Swiss-Prot, Pfam and Rfam. BUSCO checks the assembly against a lineage dataset. The three databases take about 6.1 GB on disk: Pfam 4.8 GB, Rfam 0.7 GB, Swiss-Prot 0.6 GB. The download is about 0.6 GB.
+
+`config.yaml` fixes the release of each database. Keep the quotes:
+~~~
+pfam_release: "38.2"
+rfam_release: "15.1"
+sprot_release: "2026_03"
+~~~
+The download checks Pfam and Swiss-Prot against the md5 their servers publish. Rfam publishes no checksum. The BUSCO server keeps only the newest dataset of each lineage, so a key cannot fix the BUSCO lineage. Only a kept copy can.
+
+### One copy in each run folder
+
+This is the default, `db_dir: "db"`. Each run folder downloads its own databases into `db/`. BUSCO downloads its lineage into `busco_downloads/`.
+
+### One shared copy for many run folders
+
+1. Fill a shared folder once. Start from an empty folder, named after the releases:
+   ~~~
+   mkdir -p /path/to/databases/pfam38.2_rfam15.1_sprot2026_03
+   cd /path/to/databases/pfam38.2_rfam15.1_sprot2026_03
+   cp /path/to/transXpress/config.yaml .
+   /path/to/transXpress/transXpress.sh --snakefile /path/to/transXpress/Snakefile download_databases
+   ~~~
+   The copied `config.yaml` sets the releases and the BUSCO `lineage`. The databases go to `db/`. `db/versions.txt` lists each release and the date of the BUSCO lineage dataset. Cite these in a paper.
+
+   Do not run `download_databases` in this folder a second time. Snakemake can replace files that other runs are reading.
+
+2. In the `config.yaml` of each run folder, set `db_dir` to the `db/` folder and name the lineage:
+   ~~~
+   db_dir: "/path/to/databases/pfam38.2_rfam15.1_sprot2026_03/db"
+   lineage: "viridiplantae_odb12"
+   ~~~
+   A run only reads this folder. BUSCO runs offline from `db_dir/busco_downloads`. If a database file is missing, or `lineage` is empty, Snakemake stops before any job starts and names the problem.
 
 ## Running tests
 ~~~~

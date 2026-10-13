@@ -76,6 +76,14 @@ dispersion: "0.1"
 # You can list all possible lineages by running "busco --list-datasets"
 lineage: "viridiplantae_odb12"
 
+# Releases of the annotation databases. Keep the quotes.
+# Pfam releases: https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/
+# Rfam releases: https://ftp.ebi.ac.uk/pub/databases/Rfam/
+# Swiss-Prot releases: https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/
+pfam_release: "38.2"
+rfam_release: "15.1"
+sprot_release: "2026_03"
+
 # Memory in GB and the thread count of the rules whose size follows the dataset.
 # The values here suit about 420 million read pairs, which is 18 Illumina libraries.
 # Lower them for a smaller dataset. A rule that works on a fixed chunk of 1000

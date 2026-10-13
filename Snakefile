@@ -14,6 +14,13 @@ min_version("5.4.1")
 
 configfile: "config.yaml"
 
+# The releases of the annotation databases. The download rules fetch exactly these releases.
+PFAM_RELEASE = str(config.get("pfam_release", "38.2"))
+RFAM_RELEASE = str(config.get("rfam_release", "15.1"))
+SPROT_RELEASE = str(config.get("sprot_release", "2026_03"))
+if not re.fullmatch(r"\d{4}_\d{2}", SPROT_RELEASE):
+  raise ValueError("sprot_release must look like \"2026_03\", in quotes. The config gives %s" % SPROT_RELEASE)
+
 # for executable in ["samtools", "bowtie2", "kallisto", "signalp6", "targetp", "Trinity", "blastx", "blastp", "makeblastdb", "cmscan", "hmmscan", "fastqc", "rnaspades.py", "seqkit", "R"]:
 #    if not shutil.which(executable):
 #        sys.stderr.write("Warning: Cannot find %s in your PATH\n" % (executable))
@@ -1586,67 +1593,139 @@ rule kallisto:
  
 rule download_sprot:
   """
-  Downloads and prepares SwissProt database.
+  Downloads the Swiss-Prot release named by sprot_release, checks its md5 and prepares it for BLAST.
+  UniProt serves only the newest release as a plain fasta file. An older release comes from the
+  release archive, which holds the same fasta file.
   """
   output:
-    "db/uniprot_sprot.fasta"
+    fasta="db/uniprot_sprot.fasta",
+    version="db/uniprot_sprot.version"
   log:
     "logs/download_sprot.log"
   conda:
     "envs/blast.yaml"
   params:
-    memory="2"
+    memory="2",
+    release=SPROT_RELEASE,
+    current_url="https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete",
+    archive_url="https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-" + SPROT_RELEASE + "/knowledgebase"
   threads:
     1
   shell:
     """
-    wget --directory-prefix db "ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz" &> {log}
-    gunzip db/uniprot_sprot.fasta.gz &>> {log}
-    makeblastdb -in db/uniprot_sprot.fasta -dbtype prot &>> {log}
+    db=$(dirname {output.fasta})
+
+    # the release that UniProt serves as current
+    current_release() {{
+      wget -q -O - "{params.current_url}/reldate.txt" | awk '$1 == "UniProtKB/Swiss-Prot" && $2 == "Release" {{ print $3 }}'
+    }}
+
+    # the md5 that the RELEASE.metalink file in folder $1 gives for file $2
+    metalink_md5() {{
+      wget -q -O - "$1/RELEASE.metalink" | awk -v name="$2" '/<file name=/ {{ f = index($0, "\\"" name "\\"") > 0 }} f && !found && /type="md5"/ {{ split($0, a, /[<>]/); print a[3]; found = 1 }}'
+    }}
+
+    before=$(current_release)
+    echo "Swiss-Prot release asked: {params.release}, current release: $before" > {log}
+
+    if [ "$before" = "{params.release}" ]; then
+      download="$db/uniprot_sprot.fasta.gz"
+      wget -O "$download" "{params.current_url}/uniprot_sprot.fasta.gz" &>> {log}
+      expected=$(metalink_md5 "{params.current_url}" uniprot_sprot.fasta.gz)
+    else
+      archive="uniprot_sprot-only{params.release}.tar.gz"
+      download="$db/$archive"
+      if ! wget -O "$download" "{params.archive_url}/$archive" &>> {log}; then
+        echo "Swiss-Prot {params.release} is not the current release ($before) and has no archive at {params.archive_url}" >> {log}
+        exit 1
+      fi
+      expected=$(metalink_md5 "{params.archive_url}" "$archive")
+    fi
+
+    actual=$(md5sum "$download" | cut -d " " -f 1)
+    echo "md5 of $download: expected $expected, actual $actual" >> {log}
+    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+      echo "The md5 does not match RELEASE.metalink" >> {log}
+      exit 1
+    fi
+
+    if [ "$before" = "{params.release}" ]; then
+      # UniProt could switch to a new release while the file downloads
+      after=$(current_release)
+      if [ "$after" != "$before" ]; then
+        echo "The current release changed from $before to $after during the download. Run the rule again." >> {log}
+        exit 1
+      fi
+    else
+      tar -xzf "$download" -C "$db" uniprot_sprot.fasta.gz &>> {log}
+      rm "$download"
+    fi
+
+    gunzip -f "$db/uniprot_sprot.fasta.gz" &>> {log}
+    makeblastdb -in {output.fasta} -dbtype prot &>> {log}
+    printf "Swiss-Prot\\t%s\\n" "{params.release}" > {output.version}
     """
 
 
 rule download_pfam:
   """
-  Downloads and prepares Pfam database.
+  Downloads the Pfam release named by pfam_release, checks its md5 and prepares it for hmmscan.
   """
   output:
-    "db/Pfam-A.hmm"
+    hmm="db/Pfam-A.hmm",
+    version="db/Pfam-A.version"
   log:
     "logs/download_pfam.log"
   conda:
     "envs/pfam.yaml"
   params:
-    memory="2"
+    memory="2",
+    release=PFAM_RELEASE,
+    url="https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam" + PFAM_RELEASE
   threads:
     1
   shell:
     """
-    wget --directory-prefix db "ftp://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz" &> {log}
-    gunzip db/Pfam-A.hmm.gz &>> {log}
-    hmmpress db/Pfam-A.hmm &>> {log}
+    wget -O {output.hmm}.gz "{params.url}/Pfam-A.hmm.gz" &> {log}
+    expected=$(wget -q -O - "{params.url}/md5_checksums" | awk '$2 == "Pfam-A.hmm.gz" {{ print $1 }}')
+    actual=$(md5sum {output.hmm}.gz | cut -d " " -f 1)
+    echo "md5 of Pfam-A.hmm.gz: expected $expected, actual $actual" >> {log}
+    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+      echo "The md5 does not match md5_checksums of Pfam {params.release}" >> {log}
+      exit 1
+    fi
+    gunzip -f {output.hmm}.gz &>> {log}
+    # -f replaces index files left by an earlier attempt
+    hmmpress -f {output.hmm} &>> {log}
+    printf "Pfam\\t%s\\n" "{params.release}" > {output.version}
     """
 
 
 rule download_rfam:
   """
-  Downloads and prepares Rfam database.
+  Downloads the Rfam release named by rfam_release and prepares it for cmscan.
+  Rfam publishes no checksum, so the file is not checked.
   """
   output:
-    "db/Rfam.cm"
+    cm="db/Rfam.cm",
+    version="db/Rfam.version"
   log:
     "logs/download_rfam.log"
   conda:
     "envs/rfam.yaml"
   params:
-    memory="2"
+    memory="2",
+    release=RFAM_RELEASE,
+    url="https://ftp.ebi.ac.uk/pub/databases/Rfam/" + RFAM_RELEASE
   threads:
     1
   shell:
     """
-    wget --directory-prefix db "ftp://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/Rfam.cm.gz" &> {log}
-    gunzip db/Rfam.cm.gz &>> {log}
-    cmpress db/Rfam.cm &>> {log}    
+    wget -O {output.cm}.gz "{params.url}/Rfam.cm.gz" &> {log}
+    gunzip -f {output.cm}.gz &>> {log}
+    # -F replaces index files left by an earlier attempt
+    cmpress -F {output.cm} &>> {log}
+    printf "Rfam\\t%s\\n" "{params.release}" > {output.version}
     """
 
 

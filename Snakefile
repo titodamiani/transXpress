@@ -21,6 +21,12 @@ SPROT_RELEASE = str(config.get("sprot_release", "2026_03"))
 if not re.fullmatch(r"\d{4}_\d{2}", SPROT_RELEASE):
   raise ValueError("sprot_release must look like \"2026_03\", in quotes. The config gives %s" % SPROT_RELEASE)
 
+# The ORF set that transcriptome.pep holds and the downstream rules read. Both sets are always saved.
+TRANSDECODER_ORFS = str(config.get("transdecoder_orfs", "all"))
+if TRANSDECODER_ORFS not in ["all", "single_best"]:
+  raise ValueError("transdecoder_orfs must be \"all\" or \"single_best\". The config gives %s" % TRANSDECODER_ORFS)
+TRANSDECODER_ORFS_FILE = {"all": "transcriptome_all_orfs.pep", "single_best": "transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
+
 # The folder of the annotation databases. "db" keeps one copy in each run folder, which the
 # pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
 DB_DIR = str(config.get("db_dir", "db")).rstrip("/")
@@ -53,7 +59,7 @@ if DB_SHARED:
 # https://github.com/griffithlab/rnaseq_tutorial/wiki/Trinity-Assembly-And-Analysis
 
 # These rules don't need to be sent to a cluster
-localrules: all, clean, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
+localrules: all, clean, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
 
 rule all:
@@ -64,6 +70,8 @@ rule all:
     "samples_trimmed.txt",
     "transcriptome.fasta",
     "transcriptome.pep",
+    "transcriptome_all_orfs.pep",
+    "transcriptome_single_best_orf.pep",
     "transcriptome_stats.txt",
     "ExN50_plot.pdf",
     "transcriptome_annotated.fasta",
@@ -975,29 +983,90 @@ rule transdecoder_longorfs:
     """
 
 
-rule transdecoder_predict:
+rule transdecoder_predict_all:
   """
   Runs second stage of Transdecoder predicting the likely coding regions based
-  on Pfam and SwissProt hits.
+  on Pfam and SwissProt hits. Keeps every ORF that Predict accepts, so a
+  transcript can give several proteins.
+
+  Predict skips a step when its checkpoint file exists, and the checkpoint name
+  does not include --single_best_only. So each ORF set runs on its own copy of
+  the LongOrfs folder, without the checkpoints of an earlier Predict run.
   """
   input:
     transcriptome="transcriptome.fasta",
+    orfs="transcriptome.orfs",
     pfam="annotations/pfam_orfs.out",
     blastp="annotations/sprotblastp_orfs.out"
   output:
-    "transcriptome.pep"
+    "transcriptome_all_orfs.pep"
   log:
-    "logs/transdecoder_predict.log"
+    "logs/transdecoder_predict_all.log"
   conda:
     "envs/transdecoder.yaml"
   params:
-    memory=config.get("transdecoder_predict_memory", "6")
+    memory=config.get("transdecoder_predict_memory", "6"),
+    workdir="transdecoder_all"
   threads:
     config.get("transdecoder_predict_threads", 1)
   shell:
     """
-    TransDecoder.Predict -t {input.transcriptome} --output_dir transdecoder --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &> {log}
-    cp -p transdecoder/{input.transcriptome}.transdecoder.pep {output} &>> {log}
+    rm -rf {params.workdir} &> {log}
+    mkdir -p {params.workdir} &>> {log}
+    cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
+    rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
+    TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output} &>> {log}
+    """
+
+
+rule transdecoder_predict_single_best:
+  """
+  Runs second stage of Transdecoder like transdecoder_predict_all, with
+  --single_best_only. Keeps one ORF per transcript, picked by Pfam or SwissProt
+  hit first and by length second.
+  """
+  input:
+    transcriptome="transcriptome.fasta",
+    orfs="transcriptome.orfs",
+    pfam="annotations/pfam_orfs.out",
+    blastp="annotations/sprotblastp_orfs.out"
+  output:
+    "transcriptome_single_best_orf.pep"
+  log:
+    "logs/transdecoder_predict_single_best.log"
+  conda:
+    "envs/transdecoder.yaml"
+  params:
+    memory=config.get("transdecoder_predict_memory", "6"),
+    workdir="transdecoder_single_best"
+  threads:
+    config.get("transdecoder_predict_threads", 1)
+  shell:
+    """
+    rm -rf {params.workdir} &> {log}
+    mkdir -p {params.workdir} &>> {log}
+    cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
+    rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
+    TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} --single_best_only &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output} &>> {log}
+    """
+
+
+rule transdecoder_select:
+  """
+  Copies the ORF set that transdecoder_orfs in config.yaml names to
+  transcriptome.pep, which the downstream rules read.
+  """
+  input:
+    TRANSDECODER_ORFS_FILE
+  output:
+    "transcriptome.pep"
+  log:
+    "logs/transdecoder_select.log"
+  shell:
+    """
+    cp -p {input} {output} &> {log}
     """
 
 

@@ -34,6 +34,9 @@ e_value_threshold: "1e-6"
 # Dispersion value for edgeR differential expression analysis 
 dispersion: "0.1"
 
+# ORF set that transcriptome.pep holds: "all" or "single_best". See config.yaml.
+transdecoder_orfs: "all"
+
 # The test data is small, so these keep the smaller figures rather than the ones
 # the repository config.yaml sets for 18 libraries.
 rnaspades_memory: "300"

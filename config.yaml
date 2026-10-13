@@ -90,6 +90,13 @@ pfam_release: "38.2"
 rfam_release: "15.1"
 sprot_release: "2026_03"
 
+# ORF set (open reading frames, the stretches read as proteins) that transcriptome.pep holds.
+# The downstream rules (annotation, transcriptome_annotated.*) read this set.
+# "all": every ORF that TransDecoder.Predict accepts. A transcript can give several proteins.
+# "single_best": one ORF per transcript, picked by Pfam or SwissProt hit first and by length second.
+# The pipeline saves both sets, as transcriptome_all_orfs.pep and transcriptome_single_best_orf.pep.
+transdecoder_orfs: "all"
+
 # Memory in GB and the thread count of the rules whose size follows the dataset.
 # The values here suit about 420 million read pairs, which is 18 Illumina libraries.
 # Lower them for a smaller dataset. A rule that works on a fixed chunk of 1000

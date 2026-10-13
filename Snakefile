@@ -977,7 +977,8 @@ rule transdecoder_longorfs:
     1
   shell:
     """
-    rm -rf {input.transcriptome}.transdecoder_dir &> {log}
+    # LongOrfs skips a step when its checkpoint file exists, so a rerun starts from an empty folder
+    rm -rf transdecoder/{input.transcriptome}.transdecoder_dir &> {log}
     TransDecoder.LongOrfs -t {input.transcriptome} --output_dir transdecoder &>> {log} 
     cp -p transdecoder/{input.transcriptome}.transdecoder_dir/longest_orfs.pep {output.orfs} &>> {log}
     """

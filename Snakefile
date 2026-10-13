@@ -922,7 +922,9 @@ rule busco:
     "envs/busco.yaml"
   params:
     memory=config.get("busco_memory", "10"),
-    lineage=config.get("lineage", "")
+    lineage=LINEAGE,
+    # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
+    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else ""
   threads:
     config.get("busco_threads", 16)
   shell:
@@ -934,7 +936,7 @@ rule busco:
       lineage_option="-l {params.lineage}"
     fi
 
-    busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} $lineage_option -c {threads} &> {log}
+    busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} $lineage_option -c {threads} {params.download_option} &> {log}
     echo "BUSCO run completed successfully" &>> {log}
 
     # with --auto-lineage BUSCO also writes a short_summary.generic.* file, the report is the specific one

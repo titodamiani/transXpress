@@ -35,7 +35,8 @@ if RNASPADES_FILTER not in ["default", "hard", "soft"]:
 # The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH".
 # "" runs every rule in the run folder. The heavy rules read the variable with bash, inside the job,
 # because only the job knows its value.
-SCRATCH = str(config.get("scratch", ""))
+# A key with no value reaches here as None, which means "" too
+SCRATCH = str(config.get("scratch") or "")
 if SCRATCH and not re.fullmatch(r"\$[A-Za-z_][A-Za-z0-9_]*", SCRATCH):
   raise ValueError("scratch must be \"\" or one environment variable with its $, for example \"$SCRATCH\". The config gives %s" % SCRATCH)
 SCRATCH_VAR = SCRATCH[1:]

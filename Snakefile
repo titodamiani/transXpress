@@ -1211,13 +1211,50 @@ checkpoint align_reads:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory=config.get("align_reads_memory", "100")
+    memory=config.get("align_reads_memory", "100"),
+    scratch_var=SCRATCH_VAR
   threads:
     config.get("align_reads_threads", 16)
   shell:
     """
     # Remove old markers so the aligner runs again on the trimmed reads.
     for rep in $(awk '{{print $2}}' {input.samples}); do rm -f "$rep/bowtie2.bam.ok"; done
+
+    # The indexes and the per replicate results go to the node's local disk when the scratch key names a
+    # variable that is set in this job. At the end, everything but the links is copied to the run folder,
+    # over the files there, because kallisto and align_reads write into the same replicate folders.
+    RUN=$(pwd)
+    LOG="$RUN/{log}"
+    : > "$LOG"
+    SCRATCH_VAR="{params.scratch_var}"
+    LOCAL_ROOT=""
+    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    if [ -n "$LOCAL_ROOT" ]; then
+      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
+      echo "work folder: $WORK" &>> "$LOG"
+      copy_back() {{
+        ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l -exec cp -rp -t "$RUN" {{}} + )
+      }}
+      # On a failure, the files go to the run folder as they would stand without the local disk, small
+      # files first, because a time limit leaves 30 s before Slurm kills the job.
+      on_exit() {{
+        rc=$?
+        set +e
+        trap - EXIT TERM
+        cd "$RUN"
+        if [ $rc -ne 0 ]; then
+          echo "align_reads stopped with code $rc, so the files in $WORK go to the run folder" &>> "$LOG"
+          ( cd "$WORK" && find . -type f -size -100M -print0 | xargs -0 -r cp -p --parents -t "$RUN" ) &>> "$LOG"
+          copy_back &>> "$LOG"
+        fi
+        rm -rf "$WORK"
+        exit $rc
+      }}
+      trap on_exit EXIT
+      trap "exit 143" TERM
+      cd "$WORK"
+      ln -s "$RUN/{input.transcriptome}" "$RUN/{input.gene_trans_map}" "$RUN/{input.samples}" "$RUN/trimmomatic" .
+    fi
 
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
 
@@ -1229,19 +1266,26 @@ checkpoint align_reads:
     then
       if [[ $strand_specific = "--ss rf" ]]
       then
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} --SS_lib_type RF --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &> {log}
+        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} --SS_lib_type RF --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> "$LOG"
       elif [[ $strand_specific = "--ss fr" ]]
       then
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} --SS_lib_type FR --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> {log}
+        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} --SS_lib_type FR --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> "$LOG"
       else
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> {log}
+        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> "$LOG"
       fi
     else
-      $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} {config[strand_specific]} --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> {log}
+      $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} {config[strand_specific]} --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> "$LOG"
     fi
 
     # for_rsem.bam is a large temporary copy of the alignment. Nothing reads it later.
     for rep in $(awk '{{print $2}}' {input.samples}); do rm -f "$rep/bowtie2.bam.for_rsem.bam"; done
+
+    if [ -n "$LOCAL_ROOT" ]; then
+      SIZE=$(du -sh "$WORK" | cut -f1)
+      START=$(date +%s)
+      copy_back &>> "$LOG"
+      echo "copied $SIZE from $WORK to the run folder in $(( $(date +%s) - START )) s" &>> "$LOG"
+    fi
     """
 
 checkpoint prepare_samples_for_IGV:
@@ -1763,7 +1807,8 @@ rule kallisto:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory=config.get("kallisto_memory", "20")
+    memory=config.get("kallisto_memory", "20"),
+    scratch_var=SCRATCH_VAR
   threads:
     config.get("kallisto_threads", 16)
   shell:
@@ -1773,6 +1818,42 @@ rule kallisto:
     # in each run. A fixed Perl hash seed gives the same row order in each run.
     export PERL_HASH_SEED=0
 
+    # The indexes and the per replicate results go to the node's local disk when the scratch key names a
+    # variable that is set in this job. At the end, everything but the links is copied to the run folder,
+    # over the files there, because kallisto and align_reads write into the same replicate folders.
+    RUN=$(pwd)
+    LOG="$RUN/{log}"
+    : > "$LOG"
+    SCRATCH_VAR="{params.scratch_var}"
+    LOCAL_ROOT=""
+    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    if [ -n "$LOCAL_ROOT" ]; then
+      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
+      echo "work folder: $WORK" &>> "$LOG"
+      copy_back() {{
+        ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l -exec cp -rp -t "$RUN" {{}} + )
+      }}
+      # On a failure, the files go to the run folder as they would stand without the local disk, small
+      # files first, because a time limit leaves 30 s before Slurm kills the job.
+      on_exit() {{
+        rc=$?
+        set +e
+        trap - EXIT TERM
+        cd "$RUN"
+        if [ $rc -ne 0 ]; then
+          echo "kallisto stopped with code $rc, so the files in $WORK go to the run folder" &>> "$LOG"
+          ( cd "$WORK" && find . -type f -size -100M -print0 | xargs -0 -r cp -p --parents -t "$RUN" ) &>> "$LOG"
+          copy_back &>> "$LOG"
+        fi
+        rm -rf "$WORK"
+        exit $rc
+      }}
+      trap on_exit EXIT
+      trap "exit 143" TERM
+      cd "$WORK"
+      ln -s "$RUN/{input.transcriptome}" "$RUN/{input.gene_trans_map}" "$RUN/{input.samples}" "$RUN/trimmomatic" .
+    fi
+
     assembler="{config[assembler]}"
     strand_specific="{config[strand_specific]}"
 
@@ -1780,33 +1861,40 @@ rule kallisto:
     then
       if [[ $strand_specific = "--ss rf" ]]
       then
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input.transcriptome} --SS_lib_type RF --seqType fq --samples_file {input.samples} --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map {input.gene_trans_map} &> {log}
+        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input.transcriptome} --SS_lib_type RF --seqType fq --samples_file {input.samples} --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map {input.gene_trans_map} &>> "$LOG"
       elif [[ $strand_specific = "--ss fr" ]]
       then
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input.transcriptome} --SS_lib_type FR --seqType fq --samples_file {input.samples} --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map {input.gene_trans_map} &> {log}
+        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input.transcriptome} --SS_lib_type FR --seqType fq --samples_file {input.samples} --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map {input.gene_trans_map} &>> "$LOG"
       else
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input.transcriptome} --seqType fq --samples_file {input.samples} --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map {input.gene_trans_map} &> {log}
+        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input.transcriptome} --seqType fq --samples_file {input.samples} --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map {input.gene_trans_map} &>> "$LOG"
       fi
     else
-      $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input.transcriptome} {config[strand_specific]} --seqType fq --samples_file {input.samples} --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map {input.gene_trans_map} &> {log}
+      $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input.transcriptome} {config[strand_specific]} --seqType fq --samples_file {input.samples} --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map {input.gene_trans_map} &>> "$LOG"
     fi
     
-    $TRINITY_HOME/util/abundance_estimates_to_matrix.pl --est_method kallisto --name_sample_by_basedir --gene_trans_map {input.gene_trans_map} */abundance.tsv &>> {log}
+    $TRINITY_HOME/util/abundance_estimates_to_matrix.pl --est_method kallisto --name_sample_by_basedir --gene_trans_map {input.gene_trans_map} */abundance.tsv &>> "$LOG"
     if [ -f kallisto.isoform.TMM.EXPR.matrix ]; then
-      cp -p kallisto.isoform.TMM.EXPR.matrix {output[0]} &>> {log}
+      cp -p kallisto.isoform.TMM.EXPR.matrix {output[0]} &>> "$LOG"
     elif [ -f kallisto.isoform.TPM.not_cross_norm ]; then
-      cp -p kallisto.isoform.TPM.not_cross_norm {output[0]} &>> {log}
+      cp -p kallisto.isoform.TPM.not_cross_norm {output[0]} &>> "$LOG"
     else
       echo Neither kallisto.isoform.TMM.EXPR.matrix or kallisto.isoform.TPM.not_cross_norm were produced
       exit 1
     fi
     if [ -f kallisto.gene.TMM.EXPR.matrix ]; then
-      cp -p kallisto.gene.TMM.EXPR.matrix {output[1]} &>> {log}
+      cp -p kallisto.gene.TMM.EXPR.matrix {output[1]} &>> "$LOG"
     elif [ -f kallisto.gene.TPM.not_cross_norm ]; then
-      cp -p kallisto.gene.TPM.not_cross_norm {output[1]} &>> {log}
+      cp -p kallisto.gene.TPM.not_cross_norm {output[1]} &>> "$LOG"
     else
       echo Neither kallisto.gene.TMM.EXPR.matrix or kallisto.gene.TPM.not_cross_norm were produced
       exit 1
+    fi
+
+    if [ -n "$LOCAL_ROOT" ]; then
+      SIZE=$(du -sh "$WORK" | cut -f1)
+      START=$(date +%s)
+      copy_back &>> "$LOG"
+      echo "copied $SIZE from $WORK to the run folder in $(( $(date +%s) - START )) s" &>> "$LOG"
     fi
     """
 

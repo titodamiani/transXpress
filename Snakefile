@@ -857,19 +857,55 @@ rule rnaspades:
   conda:
     "envs/rnaspades.yaml"
   params:
-    memory=config.get("rnaspades_memory", "400")
+    memory=config.get("rnaspades_memory", "400"),
+    scratch_var=SCRATCH_VAR
   threads:
     config.get("rnaspades_threads", 32)
   shell:
     """
     # record the computer this ran on, because the assembly depends on it
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
-    # --checkpoints last lets a crashed assembly restart from the last stage instead of from the start
-    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler --checkpoints last {config[kmers]} &>> {log}
 
-    # The checkpoint data is only useful to a restart, so it goes once the assembly is in place
-    if [ -s {output.default} ]; then
-      rm -rf rnaspades_out/*/saves rnaspades_out/saves &>> {log}
+    # rnaSPAdes writes about 100 GB of working files on a large dataset. When the scratch key names a
+    # variable that is set in this job, it works in a folder on the node's local disk, and rnaspades_out
+    # is copied to the run folder at the end. Otherwise it works in the run folder.
+    SCRATCH_VAR="{params.scratch_var}"
+    LOCAL_ROOT=""
+    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    if [ -n "$LOCAL_ROOT" ]; then
+      RUN=$(pwd)
+      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
+      echo "work folder: $WORK" &>> {log}
+      # On a failure, the local folder goes to rnaspades_out as it would stand today, small files first,
+      # because a time limit leaves 30 s before Slurm kills the job. The local folder is deleted in all cases.
+      on_exit() {{
+        rc=$?
+        set +e
+        trap - EXIT TERM
+        if [ $rc -ne 0 ]; then
+          echo "rnaspades stopped with code $rc, so $WORK/rnaspades_out goes to rnaspades_out" &>> {log}
+          ( cd "$WORK" && find rnaspades_out -type f -size -100M -print0 | xargs -0 -r cp -p --parents -t "$RUN" ) &>> {log}
+          cp -rp "$WORK/rnaspades_out/." rnaspades_out/ &>> {log}
+        fi
+        rm -rf "$WORK"
+        exit $rc
+      }}
+      trap on_exit EXIT
+      trap "exit 143" TERM
+    else
+      WORK=.
+    fi
+
+    # No --checkpoints: Slurm deletes the local folder when the job ends, so a restart point would not survive
+    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o "$WORK/rnaspades_out" {config[strand_specific]} --only-assembler {config[kmers]} &>> {log}
+
+    if [ "$WORK" != . ]; then
+      SIZE=$(du -sh "$WORK" | cut -f1)
+      START=$(date +%s)
+      # replace the whole folder, so no file of an earlier failed run stays beside the new assembly
+      rm -rf rnaspades_out &>> {log}
+      cp -rp "$WORK/rnaspades_out" . &>> {log}
+      echo "copied $SIZE from $WORK to rnaspades_out in $(( $(date +%s) - START )) s" &>> {log}
     fi
     """
  

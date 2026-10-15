@@ -981,7 +981,9 @@ rule transdecoder_longorfs:
     rm -rf transdecoder/{input.transcriptome}.transdecoder_dir &> {log}
     # A fixed Perl hash seed gives the same output order in each run
     export PERL_HASH_SEED=0
-    TransDecoder.LongOrfs -t {input.transcriptome} --output_dir transdecoder &>> {log} 
+    # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
+    TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
+    $TD_UTIL/TransDecoder.LongOrfs -t {input.transcriptome} --output_dir transdecoder &>> {log} 
     cp -p transdecoder/{input.transcriptome}.transdecoder_dir/longest_orfs.pep {output.orfs} &>> {log}
     """
 
@@ -1028,7 +1030,9 @@ rule transdecoder_predict_all:
     cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
     rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
     export PERL_HASH_SEED=0
-    TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &>> {log}
+    # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
+    TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
+    $TD_UTIL/TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &>> {log}
     cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output.pep} &>> {log}
     cp -p {params.workdir}/{input.transcriptome}.transdecoder.cds {output.cds} &>> {log}
     cp -p {params.workdir}/{input.transcriptome}.transdecoder.gff3 {output.gff3} &>> {log}
@@ -1069,7 +1073,9 @@ rule transdecoder_predict_single_best:
     cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
     rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
     export PERL_HASH_SEED=0
-    TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} --single_best_only &>> {log}
+    # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
+    TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
+    $TD_UTIL/TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} --single_best_only &>> {log}
     cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output.pep} &>> {log}
     cp -p {params.workdir}/{input.transcriptome}.transdecoder.cds {output.cds} &>> {log}
     cp -p {params.workdir}/{input.transcriptome}.transdecoder.gff3 {output.gff3} &>> {log}

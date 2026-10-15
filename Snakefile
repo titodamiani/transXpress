@@ -740,12 +740,43 @@ rule trinity_butterfly_parallel:
     # A measured chunk job peaks near 550 MB. This rule has one instance per
     # chunk, up to trinity_butterfly_max_chunks of them, so an oversized request here decides how many
     # land on one node and leaves the rest of its cores idle.
-    memory="3"
+    memory="3",
+    scratch_var=SCRATCH_VAR
   threads:
     1
   shell:
     """
-    bash {input} &> {log}
+    # Each line of the chunk is one small Trinity assembly, which writes and deletes many files. When the
+    # scratch key names a variable that is set in this job, --workdir puts those files on the node's local
+    # disk. Trinity still writes the fasta of each assembly into read_partitions.
+    SCRATCH_VAR="{params.scratch_var}"
+    LOCAL_ROOT=""
+    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    if [ -n "$LOCAL_ROOT" ]; then
+      RUN=$(pwd)
+      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
+      echo "work folder: $WORK" &> {log}
+      # On a failure, the work folders go to read_partitions, where they would stand without --workdir,
+      # small files first, because a time limit leaves 30 s before Slurm kills the job.
+      on_exit() {{
+        rc=$?
+        set +e
+        trap - EXIT TERM
+        if [ $rc -ne 0 ] && [ -d "$WORK/trinity_work" ]; then
+          echo "the chunk stopped with code $rc, so $WORK/trinity_work goes to trinity_out_dir/read_partitions" &>> {log}
+          ( cd "$WORK/trinity_work" && find . -type f -size -100M -print0 | xargs -0 -r cp -p --parents -t "$RUN/trinity_out_dir/read_partitions" ) &>> {log}
+          cp -rp "$WORK/trinity_work/." trinity_out_dir/read_partitions/ &>> {log}
+        fi
+        rm -rf "$WORK"
+        exit $rc
+      }}
+      trap on_exit EXIT
+      trap "exit 143" TERM
+      # Trinity accepts only a work folder with "trinity" in its name
+      sed 's|$| --workdir '"$WORK"'/trinity_work|' {input} | bash &>> {log}
+    else
+      bash {input} &> {log}
+    fi
     cp -p {input} {output} &>> {log}
     """
 

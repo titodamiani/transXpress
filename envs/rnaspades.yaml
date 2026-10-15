@@ -1,8 +1,6 @@
 channels:
   - conda-forge
   - bioconda
-  - r
-  - defaults
 dependencies:
-  - spades
-  - seqkit
+  - spades=4.3.0
+  - seqkit=2.14.0

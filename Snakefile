@@ -5,6 +5,7 @@ import re
 import csv
 import Bio.SeqIO
 import subprocess
+import tempfile
 from snakemake.utils import min_version
 from Bio.Seq import Seq
 import pandas as pd
@@ -12,6 +13,41 @@ import pandas as pd
 min_version("5.4.1")
 
 configfile: "config.yaml"
+
+# The releases of the annotation databases. The download rules fetch exactly these releases.
+PFAM_RELEASE = str(config.get("pfam_release", "38.2"))
+RFAM_RELEASE = str(config.get("rfam_release", "15.1"))
+SPROT_RELEASE = str(config.get("sprot_release", "2026_03"))
+if not re.fullmatch(r"\d{4}_\d{2}", SPROT_RELEASE):
+  raise ValueError("sprot_release must look like \"2026_03\", in quotes. The config gives %s" % SPROT_RELEASE)
+
+# The ORF set that transcriptome.pep holds and the downstream rules read. Both sets are always saved.
+TRANSDECODER_ORFS = str(config.get("transdecoder_orfs", "all"))
+if TRANSDECODER_ORFS not in ["all", "single_best"]:
+  raise ValueError("transdecoder_orfs must be \"all\" or \"single_best\". The config gives %s" % TRANSDECODER_ORFS)
+TRANSDECODER_ORFS_FILE = {"all": "transcriptome_all_orfs.pep", "single_best": "transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
+
+# The folder of the annotation databases. "db" keeps one copy in each run folder, which the
+# pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
+DB_DIR = str(config.get("db_dir", "db")).rstrip("/")
+DB_SHARED = DB_DIR != "db"
+LINEAGE = config.get("lineage", "")
+
+# The annotation rules run only after the fasta_split checkpoints, hours into a run, so a
+# shared folder is checked here, before any job starts.
+if DB_SHARED:
+  if not LINEAGE:
+    raise ValueError("A shared db_dir needs a named BUSCO lineage, for example lineage: \"viridiplantae_odb12\"")
+  db_missing = [path for path in [
+      DB_DIR + "/versions.txt",
+      DB_DIR + "/uniprot_sprot.fasta",
+      DB_DIR + "/Pfam-A.hmm",
+      DB_DIR + "/Rfam.cm",
+      DB_DIR + "/busco_downloads/lineages/" + LINEAGE]
+    if not os.path.exists(path)]
+  if db_missing:
+    raise ValueError("db_dir %s lacks:\n  %s\nFill the folder with the download_databases target, see README.md."
+      % (DB_DIR, "\n  ".join(db_missing)))
 
 # for executable in ["samtools", "bowtie2", "kallisto", "signalp6", "targetp", "Trinity", "blastx", "blastp", "makeblastdb", "cmscan", "hmmscan", "fastqc", "rnaspades.py", "seqkit", "R"]:
 #    if not shutil.which(executable):
@@ -23,7 +59,7 @@ configfile: "config.yaml"
 # https://github.com/griffithlab/rnaseq_tutorial/wiki/Trinity-Assembly-And-Analysis
 
 # These rules don't need to be sent to a cluster
-localrules: all, clean, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
+localrules: all, clean, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
 
 rule all:
@@ -34,6 +70,8 @@ rule all:
     "samples_trimmed.txt",
     "transcriptome.fasta",
     "transcriptome.pep",
+    expand("transcriptome_all_orfs.{ext}", ext=["pep", "cds", "gff3", "bed"]),
+    expand("transcriptome_single_best_orf.{ext}", ext=["pep", "cds", "gff3", "bed"]),
     "transcriptome_stats.txt",
     "ExN50_plot.pdf",
     "transcriptome_annotated.fasta",
@@ -49,7 +87,8 @@ rule all:
     "multiqc_after_trim.txt",
     "WARNING_fastqc_before_trim_overview.txt",
     "FastQC_comparison_after_trim.txt",
-    "edgeR_trans"
+    "edgeR_trans",
+    "run_info.txt"
 
 rule clean:
   """
@@ -61,8 +100,71 @@ rule clean:
     if [ -f samples_trimmed.txt ]; then
       cut -f 2 < samples_trimmed.txt | xargs --no-run-if-empty rm -rf
     fi
-    rm -rf trinity_* rnaspades_* tmp* log TMHMM* kallisto* transcriptome* pipeliner* annotation* transdecoder* trimmomatic* samples_trimmed* ExN50_plot.pdf multiqc fastqc edgeR_trans
+    rm -rf trinity_* rnaspades_* tmp* log TMHMM* kallisto* transcriptome* pipeliner* annotation* transdecoder* trimmomatic* samples_trimmed* ExN50_plot.pdf multiqc fastqc edgeR_trans run_info.txt
     """
+
+
+rule run_info:
+  """
+  Records the computer the pipeline ran on and the transXpress commit.
+  The assembly depends on the hardware, the assembler version and the thread
+  count, so a later run can be compared against this one.
+  """
+  output:
+    "run_info.txt"
+  params:
+    memory="2"
+  threads:
+    1
+  run:
+    import platform
+    import socket
+    import subprocess
+
+    def field(path, key):
+      try:
+        with open(path) as handle:
+          for line in handle:
+            if line.startswith(key):
+              return line.split(":", 1)[-1].strip()
+      except OSError:
+        pass
+      return ""
+
+    cpu = field("/proc/cpuinfo", "model name") or platform.processor() or platform.machine()
+    memory_total = field("/proc/meminfo", "MemTotal") or "unknown"
+
+    os_name = ""
+    try:
+      with open("/etc/os-release") as handle:
+        for line in handle:
+          if line.startswith("PRETTY_NAME="):
+            os_name = line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+      pass
+    if not os_name:
+      os_name = platform.platform()
+
+    try:
+      commit = subprocess.check_output(
+        ["git", "-C", workflow.basedir, "rev-parse", "HEAD"],
+        stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+      commit = "unknown"
+
+    with open(output[0], "w") as out:
+      out.write("host\t%s\n" % socket.gethostname())
+      out.write("cpu\t%s\n" % cpu)
+      out.write("cores\t%s\n" % os.cpu_count())
+      out.write("memory_total\t%s\n" % memory_total)
+      out.write("os\t%s\n" % os_name)
+      out.write("kernel\t%s %s %s\n" % (platform.system(), platform.release(), platform.machine()))
+      out.write("python\t%s\n" % platform.python_version())
+      out.write("transxpress_commit\t%s\n" % commit)
+      out.write("assembler\t%s\n" % config["assembler"])
+      out.write("assembler_threads\t%s\n" % (
+        config.get("rnaspades_threads", 32) if config["assembler"] == "rnaspades"
+        else config.get("trinity_final_threads", 16)))
 
 
 rule fastqc_before_trim:
@@ -78,17 +180,17 @@ rule fastqc_before_trim:
   conda:
     "envs/qc.yaml"
   params:
-    memory="4"
+    memory="6"
   threads:
-    1
+    8
   shell:
     """
     # run fastqc on input files
     # making directory for the fastqc summary files
     mkdir {output} &> {log}
     FILES=$(awk '{{ printf "%s\\n%s\\n", $3,$4}}' {input}) &>> {log}
-    # running fasqc on the files
-    for file in $FILES; do fastqc -f fastq -o {output} $file; done &>> {log}
+    # running fastqc on the files, {threads} of them at a time
+    fastqc -f fastq -t {threads} -o {output} $FILES &>> {log}
     """
 
 
@@ -315,11 +417,13 @@ rule trimmomatic_parallel:
   conda:
     "envs/trimmomatic.yaml"
   params:
-    memory="10"
+    memory="4"
   threads:
-    4
+    8
   shell:
     """
+    # record the computer this ran on, because the assembly depends on it
+    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
     # note: trimmomatic can use gzipped files directly
     read SAMPLE REPLICATE F_READS R_READS < {input}
     # If the sample line is empty, ignore it
@@ -328,10 +432,10 @@ rule trimmomatic_parallel:
       exit 0
     fi
     if [ ! -z "$R_READS" ]; then
-      trimmomatic PE -threads {threads} $F_READS $R_READS trimmomatic/{wildcards[job_index]}.R1-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R1-U.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-U.qtrim.fastq.gz {config[trimmomatic_parameters]} &> {log}
+      trimmomatic PE -threads {threads} $F_READS $R_READS trimmomatic/{wildcards[job_index]}.R1-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R1-U.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-U.qtrim.fastq.gz {config[trimmomatic_parameters]} &>> {log}
       echo $SAMPLE	$REPLICATE	trimmomatic/{wildcards[job_index]}.R1-P.qtrim.fastq.gz	trimmomatic/{wildcards[job_index]}.R2-P.qtrim.fastq.gz > {output} 2>> {log}
     else
-      trimmomatic SE -threads {threads} $F_READS trimmomatic/{wildcards[job_index]}.U.qtrim.fastq.gz {config[trimmomatic_parameters]} &> {log}
+      trimmomatic SE -threads {threads} $F_READS trimmomatic/{wildcards[job_index]}.U.qtrim.fastq.gz {config[trimmomatic_parameters]} &>> {log}
       echo $SAMPLE      $REPLICATE      trimmomatic/{wildcards[job_index]}.U.qtrim.fastq.gz > {output} 2>> {log}
     fi
     """
@@ -342,7 +446,8 @@ def trimmomatic_completed_parallel_jobs(wildcards):
   Returns names of files with information about files processed with trimmomatic.
   """
   parallel_dir = checkpoints.trimmomatic_split.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "sample_{job_index}")).job_index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "sample_{job_index}")).job_index)
   completed_ids = expand(os.path.join(parallel_dir,"completed_{job_index}"), job_index=job_ids)
   return completed_ids
 
@@ -375,17 +480,17 @@ rule fastqc_after_trim:
   conda:
     "envs/qc.yaml"
   params:
-    memory="4"
+    memory="6"
   threads:
-    1
+    8
   shell:
     """
     # run fastqc on input files
     # making directory for the fastqc summary files
     mkdir {output} &> {log}
     FILES=$(awk '{{ printf "%s\\n%s\\n", $3,$4}}' {input}) &>> {log}
-    # running fasqc on the files
-    for file in $FILES; do fastqc -f fastq -o {output} $file; done &>> {log}
+    # running fastqc on the files, {threads} of them at a time
+    fastqc -f fastq -t {threads} -o {output} $FILES &>> {log}
     """
 
 
@@ -543,12 +648,34 @@ rule trinity_inchworm_chrysalis:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="200"
+    memory=config.get("trinity_inchworm_chrysalis_memory", "450")
   threads:
-    16
+    config.get("trinity_inchworm_chrysalis_threads", 16)
   shell:
     """
-    Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &> {log}
+    # record the computer this ran on, because the assembly depends on it
+    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
+
+    # Trinity ticks off the step that writes {output} with trinity_out_dir/recursive_trinity.cmds.ok and
+    # does not check that the file that step wrote is still in place. trinity_final consumes the file and
+    # leaves recursive_trinity.cmds.completed behind, so after a pass the tick is there and the file is
+    # not. Trinity then skips the step, exits 0 and writes no output. So the tick goes first.
+    rm -f trinity_out_dir/recursive_trinity.cmds.ok &>> {log}
+
+    # trinity_final deletes read_partitions once the assembly is written, because it holds one folder per
+    # read cluster and can reach millions of files. Trinity does not partition the reads again while
+    # trinity_out_dir/partitioned_reads.files.list.ok is in place, and it leaves the top folder of
+    # read_partitions behind, so neither the folder nor its emptiness tells the two cases apart. Test the
+    # list itself: if the first read file it names is gone, the partitions are gone with it and every
+    # Butterfly chunk would stop on a missing input. A crashed run whose partitions are still in place
+    # keeps its tick, so its hours of partitioning are not repeated.
+    PARTITION_LIST=trinity_out_dir/partitioned_reads.files.list
+    if [ ! -s $PARTITION_LIST ] || [ ! -e "$(head -1 $PARTITION_LIST)" ]; then
+      echo "read partitions are missing, so Trinity partitions the reads again" &>> {log}
+      rm -f $PARTITION_LIST.ok &>> {log}
+    fi
+
+    Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
     """
 
 
@@ -563,12 +690,21 @@ checkpoint trinity_butterfly_split:
     directory("trinity_out_dir/parallel_jobs")
   log:
     "logs/trinity_split.log"
+  params:
+    cmds_per_chunk=config.get("trinity_butterfly_cmds_per_chunk", 20),
+    max_chunks=config.get("trinity_butterfly_max_chunks", 1000)
   shell:
     """
     mkdir -p {output} &> {log}
+    # Each chunk is one Slurm job. A chunk holds at least cmds_per_chunk commands, so small data runs
+    # a few jobs, and there are at most max_chunks chunks, so large data does not submit more jobs.
+    COMMANDS=$(wc -l < {input})
+    CHUNKS=$(( (COMMANDS + {params.cmds_per_chunk} - 1) / {params.cmds_per_chunk} ))
+    if [ $CHUNKS -gt {params.max_chunks} ]; then CHUNKS={params.max_chunks}; fi
+    if [ $CHUNKS -lt 1 ]; then CHUNKS=1; fi
+    echo "$COMMANDS commands in $CHUNKS chunks" &>> {log}
     # Note: it is important to use -d and not --numeric-suffixes, see https://github.com/transXpress/transXpress-snakemake/issues/12
-    # Note #2: we split into 1000 chunks to avoid running over the command line limit when too many parallel jobs are created, see https://bitbucket.org/snakemake/snakemake/issues/878/errno-7-argument-list-too-long-path-to-bin 
-    split -n l/1000 -e -d {input} {output}/job_ &>> {log}
+    split -n l/$CHUNKS -e -d {input} {output}/job_ &>> {log}
     """
 
 
@@ -579,13 +715,19 @@ rule trinity_butterfly_parallel:
   input:
     "trinity_out_dir/parallel_jobs/job_{job_index}"
   output:
+    # Keep this inside parallel_jobs. Each split deletes the folder, so every chunk runs again. After
+    # trinity_inchworm_chrysalis runs again, the job_ files can hold the same commands, and Snakemake
+    # skips a chunk whose job_ file has the same content and whose output sits in another folder.
     "trinity_out_dir/parallel_jobs/completed_{job_index}"
   log:
     "logs/trinity_parallel{job_index}.log"
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="10"
+    # A measured chunk job peaks near 550 MB. This rule has one instance per
+    # chunk, up to trinity_butterfly_max_chunks of them, so an oversized request here decides how many
+    # land on one node and leaves the rest of its cores idle.
+    memory="3"
   threads:
     1
   shell:
@@ -600,7 +742,8 @@ def trinity_completed_parallel_jobs(wildcards):
   Returns filenames of the files processed in parallel.
   """
   parallel_dir = checkpoints.trinity_butterfly_split.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "job_{job_index}")).job_index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "job_{job_index}")).job_index)
   completed_ids = expand(os.path.join(parallel_dir,"completed_{job_index}"), job_index=job_ids)
   return completed_ids
 
@@ -618,9 +761,13 @@ rule trinity_butterfly_parallel_merge:
     1
   shell:
     """
-    # Can crash if there are too many parallel jobs
-    # See https://bitbucket.org/snakemake/snakemake/issues/878/errno-7-argument-list-too-long-path-to-bin 
-    cat {input.jobs} > {output.cmds_completed} 2> {log}
+    # Snakemake runs this script as one string of at most 131071 bytes, so naming every chunk file here
+    # stops near 2900 chunks with "Argument list too long", see
+    # https://bitbucket.org/snakemake/snakemake/issues/878/errno-7-argument-list-too-long-path-to-bin
+    # xargs passes the files to cat in calls that fit the limit, so the chunk count has no limit here.
+    # The list comes from the job_ files, as the rule input does, so a stray completed_ file is not read
+    # and a missing one stops cat. The chunk suffixes have a fixed width, so sort gives the order of the split.
+    {{ find trinity_out_dir/parallel_jobs -maxdepth 1 -name 'job_*' | LC_ALL=C sort | sed 's|/job_|/completed_|' | xargs -r cat ; }} > {output.cmds_completed} 2> {log}
     """
 
 
@@ -639,12 +786,44 @@ rule trinity_final:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="200"
+    memory=config.get("trinity_final_memory", "450")
   threads:
-    16
+    config.get("trinity_final_threads", 16)
   shell:
     """
+    # record the computer this ran on, because the assembly depends on it
+    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
+    # read_partitions is deleted after a successful assembly (see below), and Trinity needs it to collect the transcripts
+    # Trinity does not partition the reads again while its own checkpoint files exist, so they must be removed first
+    if [ ! -d trinity_out_dir/read_partitions ]; then
+      echo "ERROR: trinity_out_dir/read_partitions is missing. It was deleted after an earlier assembly." | tee -a {log} >&2
+      echo "To assemble again: rm -f trinity_out_dir/partitioned_reads.files.list.ok trinity_out_dir/recursive_trinity.cmds.ok" | tee -a {log} >&2
+      echo "then run snakemake again with: --forcerun trinity_inchworm_chrysalis" | tee -a {log} >&2
+      exit 1
+    fi
+
+    # Trinity ticks off its last step with trinity_out_dir/__salmon_filt.chkpts/salmon.filt.ok and does not
+    # check that the file that step wrote is still in place. With the tick of an earlier assembly present,
+    # Trinity skips the one command that writes {output.transcriptome}, prints "Trinity.fasta 0 MByte" and
+    # exits 0 with no assembly. So the ticks and the half-finished output of an earlier assembly go first.
+    rm -rf trinity_out_dir/__salmon_filt.chkpts trinity_out_dir/Trinity.tmp.fasta &>> {log}
+
     Trinity --max_memory {params.memory}G --CPU {threads} --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
+
+    # read_partitions holds one folder per read cluster (can be millions of files) and is not needed after the assembly
+    # Delete it only once the assembly is in place. Trinity can exit 0 without writing it, and read_partitions
+    # is the only input the assembly can be repeated from, so deleting it on a failed run loses the run.
+    if [ -s {output.transcriptome} ] && [ -s {output.gene_trans_map} ]; then
+      # rename first, so that a half-deleted folder is never left under its real name
+      rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
+      mv trinity_out_dir/read_partitions trinity_out_dir/read_partitions.deleting &>> {log}
+      rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
+    else
+      # fail here, so the log names the cause and Snakemake does not report only a missing output file
+      echo "ERROR: Trinity exited 0 but did not write {output.transcriptome} and {output.gene_trans_map}." | tee -a {log} >&2
+      echo "trinity_out_dir/read_partitions is kept, so the assembly can run again. See {log}" | tee -a {log} >&2
+      exit 1
+    fi
     """
 
 
@@ -663,12 +842,21 @@ rule rnaspades:
   conda:
     "envs/rnaspades.yaml"
   params:
-    memory="200"
+    memory=config.get("rnaspades_memory", "400")
   threads:
-    16
+    config.get("rnaspades_threads", 32)
   shell:
     """
-    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler {config[kmers]} &> {log}
+    # record the computer this ran on, because the assembly depends on it
+    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
+    # --checkpoints last lets a crashed assembly restart from the last stage instead of from the start
+    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler --checkpoints last {config[kmers]} &>> {log}
+
+    # The checkpoint data is only useful to a restart, so it goes once the assembly is in place
+    if [ -s {output.transcriptome} ]; then
+      rm -rf rnaspades_out/*/saves rnaspades_out/saves &>> {log}
+    fi
+
     ##Make a fake gene_trans_map file
     seqkit seq -n {output.transcriptome} | while read id ; do echo -e "$id\\t$id" ; done > {output.gene_trans_map} 2>> {log}
     """
@@ -683,19 +871,13 @@ rule transcriptome_copy:
     gene_trans_map=rules.rnaspades.output.gene_trans_map if config["assembler"]=="rnaspades" else rules.trinity_final.output.gene_trans_map,
   output:
     transcriptome="transcriptome.fasta",
-    gene_trans_map="transcriptome.gene_trans_map",
-    #create copies the same way older Trinity versions did, for parity, in case other dependencies on that path exist?
-    redundant_transcriptome="trinity_out_dir/Trinity.fasta",
-    redundant_gene_trans_map="trinity_out_dir/Trinity.fasta.gene_trans_map"
+    gene_trans_map="transcriptome.gene_trans_map"
   log:
     "logs/transcriptome_copy.log"
   shell:
     """
     cp -p {input.transcriptome} {output.transcriptome} &> {log}
     cp -p {input.gene_trans_map} {output.gene_trans_map} &>> {log}
-    #create copies the same way older Trinity versions did, for parity, in case other dependencies on that path exist?
-    cp -p {input.transcriptome} {output.redundant_transcriptome} &> {log}
-    cp -p {input.gene_trans_map} {output.redundant_gene_trans_map} &>> {log}
     """
 
 
@@ -747,29 +929,34 @@ rule busco:
   conda:
     "envs/busco.yaml"
   params:
-    memory="10"
+    memory=config.get("busco_memory", "10"),
+    lineage=LINEAGE,
+    # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
+    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else ""
   threads:
-    4
+    config.get("busco_threads", 16)
   shell:
     """
-    lineage={config[lineage]} &> {log}
-    if [ -z "$lineage"] &>> {log}
-    then &>> {log}
-      busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} --auto-lineage -c {threads} &>> {log}
-    else &>> {log}
-      busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} -l $lineage -c {threads} &>> {log}
-    fi &>> {log}
-
-    status=$?
-
-    if [ $status -eq 0 ]
-    then
-      echo "BUSCO run completed successfully" &>> {log}
-      cp busco/short_summary*.txt {output.report} &>> {log}
+    # an empty or missing lineage lets BUSCO choose the lineage automatically
+    if [ -z "{params.lineage}" ]; then
+      lineage_option="--auto-lineage"
     else
-      echo "BUSCO run failed" &>> {log}
-      exit 1 &>> {log}
+      lineage_option="-l {params.lineage}"
     fi
+
+    busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} $lineage_option -c {threads} {params.download_option} &> {log}
+    echo "BUSCO run completed successfully" &>> {log}
+
+    # with --auto-lineage BUSCO also writes a short_summary.generic.* file, the report is the specific one
+    cp {output.out_directory}/short_summary.specific.*.txt {output.report} &>> {log}
+
+    # pack the per-gene folders (thousands of small files) into one archive each
+    for d in {output.out_directory}/run_*/busco_sequences {output.out_directory}/run_*/hmmer_output; do
+      if [ -d "$d" ]; then
+        tar -czf "$d.tar.gz" -C "$(dirname "$d")" "$(basename "$d")" &>> {log}
+        rm -rf "$d" &>> {log}
+      fi
+    done
     """
 
 rule transdecoder_longorfs:
@@ -790,35 +977,127 @@ rule transdecoder_longorfs:
     1
   shell:
     """
-    rm -rf {input.transcriptome}.transdecoder_dir &> {log}
-    TransDecoder.LongOrfs -t {input.transcriptome} --output_dir transdecoder &>> {log} 
+    # LongOrfs skips a step when its checkpoint file exists, so a rerun starts from an empty folder
+    rm -rf transdecoder/{input.transcriptome}.transdecoder_dir &> {log}
+    # A fixed Perl hash seed gives the same output order in each run
+    export PERL_HASH_SEED=0
+    # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
+    TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
+    $TD_UTIL/TransDecoder.LongOrfs -t {input.transcriptome} --output_dir transdecoder &>> {log} 
     cp -p transdecoder/{input.transcriptome}.transdecoder_dir/longest_orfs.pep {output.orfs} &>> {log}
     """
 
 
-rule transdecoder_predict:
+rule transdecoder_predict_all:
   """
   Runs second stage of Transdecoder predicting the likely coding regions based
-  on Pfam and SwissProt hits.
+  on Pfam and SwissProt hits. Keeps every ORF that Predict accepts, so a
+  transcript can give several proteins. Saves the proteins (.pep), the coding
+  sequences (.cds), and the ORF positions on the transcripts (.gff3, .bed).
+
+  Predict skips a step when its checkpoint file exists, and the checkpoint name
+  does not include --single_best_only. So each ORF set runs on its own copy of
+  the LongOrfs folder, without the checkpoints of an earlier Predict run. The
+  copy is deleted when the four files are saved.
+
+  Predict reads the ORFs of one transcript in Perl hash order, which is random
+  in each run. A fixed hash seed gives the same output order and the same pick
+  among tied ORFs in each run.
   """
   input:
     transcriptome="transcriptome.fasta",
+    orfs="transcriptome.orfs",
     pfam="annotations/pfam_orfs.out",
     blastp="annotations/sprotblastp_orfs.out"
   output:
-    "transcriptome.pep"
+    pep="transcriptome_all_orfs.pep",
+    cds="transcriptome_all_orfs.cds",
+    gff3="transcriptome_all_orfs.gff3",
+    bed="transcriptome_all_orfs.bed"
   log:
-    "logs/transdecoder_predict.log"
+    "logs/transdecoder_predict_all.log"
   conda:
     "envs/transdecoder.yaml"
   params:
-    memory="10"
+    memory=config.get("transdecoder_predict_memory", "6"),
+    workdir="transdecoder_all"
   threads:
-    1
+    config.get("transdecoder_predict_threads", 1)
   shell:
     """
-    TransDecoder.Predict -t {input.transcriptome} --output_dir transdecoder --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &> {log}
-    cp -p transdecoder/{input.transcriptome}.transdecoder.pep {output} &>> {log}
+    rm -rf {params.workdir} &> {log}
+    mkdir -p {params.workdir} &>> {log}
+    cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
+    rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
+    export PERL_HASH_SEED=0
+    # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
+    TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
+    $TD_UTIL/TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output.pep} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.cds {output.cds} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.gff3 {output.gff3} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.bed {output.bed} &>> {log}
+    rm -rf {params.workdir} &>> {log}
+    """
+
+
+rule transdecoder_predict_single_best:
+  """
+  Runs second stage of Transdecoder like transdecoder_predict_all, with
+  --single_best_only. Keeps one ORF per transcript, picked by Pfam or SwissProt
+  hit first and by length second.
+  """
+  input:
+    transcriptome="transcriptome.fasta",
+    orfs="transcriptome.orfs",
+    pfam="annotations/pfam_orfs.out",
+    blastp="annotations/sprotblastp_orfs.out"
+  output:
+    pep="transcriptome_single_best_orf.pep",
+    cds="transcriptome_single_best_orf.cds",
+    gff3="transcriptome_single_best_orf.gff3",
+    bed="transcriptome_single_best_orf.bed"
+  log:
+    "logs/transdecoder_predict_single_best.log"
+  conda:
+    "envs/transdecoder.yaml"
+  params:
+    memory=config.get("transdecoder_predict_memory", "6"),
+    workdir="transdecoder_single_best"
+  threads:
+    config.get("transdecoder_predict_threads", 1)
+  shell:
+    """
+    rm -rf {params.workdir} &> {log}
+    mkdir -p {params.workdir} &>> {log}
+    cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
+    rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
+    export PERL_HASH_SEED=0
+    # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
+    TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
+    $TD_UTIL/TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} --single_best_only &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output.pep} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.cds {output.cds} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.gff3 {output.gff3} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.bed {output.bed} &>> {log}
+    rm -rf {params.workdir} &>> {log}
+    """
+
+
+rule transdecoder_select:
+  """
+  Copies the ORF set that transdecoder_orfs in config.yaml names to
+  transcriptome.pep, which the downstream rules read.
+  """
+  input:
+    TRANSDECODER_ORFS_FILE
+  output:
+    "transcriptome.pep"
+  log:
+    "logs/transdecoder_select.log"
+  shell:
+    """
+    cp -p {input} {output} &> {log}
     """
 
 
@@ -829,7 +1108,7 @@ checkpoint align_reads:
   and estimating the abundance with RSEM.
   """
   input:
-    samples=config["samples_file"],
+    samples="samples_trimmed.txt",
     transcriptome="transcriptome.fasta",
     gene_trans_map="transcriptome.gene_trans_map"
   output:
@@ -839,11 +1118,14 @@ checkpoint align_reads:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="100"
+    memory=config.get("align_reads_memory", "100")
   threads:
-    16
+    config.get("align_reads_threads", 16)
   shell:
     """
+    # Remove old markers so the aligner runs again on the trimmed reads.
+    for rep in $(awk '{{print $2}}' {input.samples}); do rm -f "$rep/bowtie2.bam.ok"; done
+
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
 
 
@@ -864,19 +1146,20 @@ checkpoint align_reads:
     else
       $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts {input[1]} {config[strand_specific]} --seqType fq --samples_file {input[0]} --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map {input[2]} &>> {log}
     fi
+
+    # for_rsem.bam is a large temporary copy of the alignment. Nothing reads it later.
+    for rep in $(awk '{{print $2}}' {input.samples}); do rm -f "$rep/bowtie2.bam.for_rsem.bam"; done
     """
 
 checkpoint prepare_samples_for_IGV:
   """
   Not run by default.
-  Moves bam alignment files to bowtie_alignments directory
-  and prepares the files to be used by IGV by sorting and 
-  indexing them.
+  Prepares the bam alignment files to be used by IGV by sorting
+  them into the bowtie_alignments directory and indexing them.
   """
   input:
     alignment="{sample}/bowtie2.bam"
   output:
-    alignment="bowtie_alignments/{sample}.bam",
     sorted_alignment="bowtie_alignments/{sample}.sorted.bam",
     indexed_alignment="bowtie_alignments/{sample}.sorted.bam.bai"
   log:
@@ -884,18 +1167,18 @@ checkpoint prepare_samples_for_IGV:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="2"
+    memory="10"
   threads:
-    1
+    4
   shell:
     """
-    cp {input.alignment} {output.alignment} &> {log}
-    samtools sort --threads {threads} -o {output.sorted_alignment} {output.alignment} &>> {log}
+    samtools sort --threads {threads} -m 2G -o {output.sorted_alignment} {input.alignment} &> {log}
     samtools index {output.sorted_alignment} &>> {log}
     """ 
 
 def get_igv(wildcards):
-  indeces = glob_wildcards("{sample}/bowtie2.bam").sample
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  indeces = sorted(glob_wildcards("{sample}/bowtie2.bam").sample)
   completed = expand(os.path.join("bowtie_alignments", "{sample}.sorted.bam.bai"),sample=indeces)
   return completed
 
@@ -1068,7 +1351,8 @@ def parallel_annotation_tasks_fasta(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_fasta.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "{index}.fasta" )).index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.fasta" )).index)
   completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1077,7 +1361,8 @@ def parallel_annotation_tasks_orfs(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_orfs.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index)
   completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1086,7 +1371,8 @@ def parallel_annotation_tasks_pep(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_pep.get(**wildcards).output[0]
-  job_ids = glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index)
   completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1156,7 +1442,7 @@ rule rfam_parallel:
   """
   input:
     fasta="annotations/chunks_fasta/{index}.fasta",
-    db="db/Rfam.cm"
+    db=DB_DIR + "/Rfam.cm"
   output:
     "annotations/rfam/{index}.out"
   log:
@@ -1164,9 +1450,9 @@ rule rfam_parallel:
   conda:
     "envs/rfam.yaml"
   params:
-    memory="8" # increased memory from 2 to 8 becuase it was not sufficient
+    memory="5"
   threads:
-    2
+    4
   shell:
     """
     cmscan -E {config[e_value_threshold]} --rfam --cpu {threads} --tblout {output} {input[db]} {input[fasta]} &> {log}
@@ -1179,7 +1465,7 @@ rule pfam_parallel:
   """
   input:
     fasta="annotations/chunks_orfs/{index}.orfs",
-    db="db/Pfam-A.hmm"
+    db=DB_DIR + "/Pfam-A.hmm"
   output:
     "annotations/pfam/{index}.out"
   log:
@@ -1203,7 +1489,7 @@ rule sprot_blastp_parallel:
   """
   input:
     fasta="annotations/chunks_orfs/{index}.orfs",
-    db="db/uniprot_sprot.fasta"
+    db=DB_DIR + "/uniprot_sprot.fasta"
   output:
     "annotations/sprotblastp/{index}.out"
   log:
@@ -1211,7 +1497,7 @@ rule sprot_blastp_parallel:
   conda:
     "envs/blast.yaml"
   params:
-    memory="4"
+    memory="2"
   threads:
     2
   shell:
@@ -1226,7 +1512,7 @@ rule sprot_blastx_parallel:
   """
   input:
     fasta="annotations/chunks_fasta/{index}.fasta",
-    db="db/uniprot_sprot.fasta"
+    db=DB_DIR + "/uniprot_sprot.fasta"
   output:
     "annotations/sprotblastx/{index}.out"
   log:
@@ -1234,9 +1520,9 @@ rule sprot_blastx_parallel:
   conda:
     "envs/blast.yaml"
   params:
-    memory="4"
+    memory="2"
   threads:
-    2
+    4
   shell:
     """
     blastx -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {config[e_value_threshold]} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
@@ -1259,13 +1545,10 @@ rule tmhmm_parallel:
   threads:
     1
   run:
-    output_dir = os.path.join("annotations", "tmhmm")
-
-    # create output directory
-    os.makedirs(output_dir, exist_ok=True)
-
     # open the input file, output file and log file
-    with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle:
+    # tmhmm.py writes its result files into the current directory, so each chunk works in its own temporary directory
+    # the temporary directory and the per-protein files in it are deleted when the chunk is done
+    with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory() as tmp_dir:
 
       # iterate through individual sequences in input file, tmhmm.py can be executed with just one sequence at a time
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
@@ -1281,19 +1564,19 @@ rule tmhmm_parallel:
         record.seq = Seq(re.sub('X',"",str(record.seq)))
 
         # saving this fasta file
-        fasta_file =  os.path.join(output_dir, record.id + ".fasta")
+        fasta_file =  os.path.join(tmp_dir, record.id + ".fasta")
         Bio.SeqIO.write(record, fasta_file, "fasta")
 
         # executing the tmhmm.py on created fasta
         cmd_tmhmm = ['tmhmm', '-f', fasta_file]
-        subprocess.run(cmd_tmhmm, stdout = log_handle, stderr = log_handle)
+        subprocess.run(cmd_tmhmm, stdout = log_handle, stderr = log_handle, cwd = tmp_dir)
 
-        # 3 files are created afterwards
+        # 3 files are created afterwards in tmp_dir
         # record.id.summary     record.id.annotation    record.id.plot
 
-        summary_file = record.id + ".summary"
-        annotation_file = record.id + ".annotation"
-        plot_file = record.id + ".plot"
+        summary_file = os.path.join(tmp_dir, record.id + ".summary")
+        annotation_file = os.path.join(tmp_dir, record.id + ".annotation")
+        plot_file = os.path.join(tmp_dir, record.id + ".plot")
 
         # creating shorter output from summary file
         with open(summary_file, "r") as inp:
@@ -1334,7 +1617,7 @@ rule signalp_parallel:
   conda:
     "signalp"
   params:
-    memory="8"
+    memory="4"
   threads:
     1
   shell:
@@ -1359,7 +1642,7 @@ rule targetp_parallel:
   conda:
     "targetp"
   params:
-    memory="2"
+    memory="3"
   threads:
     1
   shell:
@@ -1387,9 +1670,9 @@ rule kallisto:
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory="16" # increased memory from 2 to 8 since it was not sufficient
+    memory=config.get("kallisto_memory", "20")
   threads:
-    8
+    config.get("kallisto_threads", 16)
   shell:
     """
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
@@ -1432,70 +1715,200 @@ rule kallisto:
     """
 
  
-rule download_sprot:
-  """
-  Downloads and prepares SwissProt database.
-  """
-  output:
-    "db/uniprot_sprot.fasta"
-  log:
-    "logs/download_sprot.log"
-  conda:
-    "envs/blast.yaml"
-  params:
-    memory="2"
-  threads:
-    1
-  shell:
+# The download rules exist only when db_dir is "db", so a run never writes to a shared
+# database folder. A shared folder is filled once with the download_databases target.
+if not DB_SHARED:
+
+  localrules: download_databases
+
+  rule download_sprot:
     """
-    wget --directory-prefix db "ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz" &> {log}
-    gunzip db/uniprot_sprot.fasta.gz &>> {log}
-    makeblastdb -in db/uniprot_sprot.fasta -dbtype prot &>> {log}
+    Downloads the Swiss-Prot release named by sprot_release, checks its md5 and prepares it for BLAST.
+    UniProt serves only the newest release as a plain fasta file. An older release comes from the
+    release archive, which holds the same fasta file.
     """
+    output:
+      fasta="db/uniprot_sprot.fasta",
+      version="db/uniprot_sprot.version"
+    log:
+      "logs/download_sprot.log"
+    conda:
+      "envs/blast.yaml"
+    params:
+      memory="2",
+      release=SPROT_RELEASE,
+      current_url="https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete",
+      archive_url="https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-" + SPROT_RELEASE + "/knowledgebase"
+    threads:
+      1
+    shell:
+      """
+      db=$(dirname {output.fasta})
+
+      # the release that UniProt serves as current
+      current_release() {{
+        wget -q -O - "{params.current_url}/reldate.txt" | awk '$1 == "UniProtKB/Swiss-Prot" && $2 == "Release" {{ print $3 }}'
+      }}
+
+      # the md5 that the RELEASE.metalink file in folder $1 gives for file $2
+      metalink_md5() {{
+        wget -q -O - "$1/RELEASE.metalink" | awk -v name="$2" '/<file name=/ {{ f = index($0, "\\"" name "\\"") > 0 }} f && !found && /type="md5"/ {{ split($0, a, /[<>]/); print a[3]; found = 1 }}'
+      }}
+
+      before=$(current_release)
+      echo "Swiss-Prot release asked: {params.release}, current release: $before" > {log}
+
+      if [ "$before" = "{params.release}" ]; then
+        download="$db/uniprot_sprot.fasta.gz"
+        wget -O "$download" "{params.current_url}/uniprot_sprot.fasta.gz" &>> {log}
+        expected=$(metalink_md5 "{params.current_url}" uniprot_sprot.fasta.gz)
+      else
+        archive="uniprot_sprot-only{params.release}.tar.gz"
+        download="$db/$archive"
+        if ! wget -O "$download" "{params.archive_url}/$archive" &>> {log}; then
+          echo "Swiss-Prot {params.release} is not the current release ($before) and has no archive at {params.archive_url}" >> {log}
+          exit 1
+        fi
+        expected=$(metalink_md5 "{params.archive_url}" "$archive")
+      fi
+
+      actual=$(md5sum "$download" | cut -d " " -f 1)
+      echo "md5 of $download: expected $expected, actual $actual" >> {log}
+      if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+        echo "The md5 does not match RELEASE.metalink" >> {log}
+        exit 1
+      fi
+
+      if [ "$before" = "{params.release}" ]; then
+        # UniProt could switch to the next release while the file downloads
+        after=$(current_release)
+        if [ "$after" != "$before" ]; then
+          echo "The current release changed from $before to $after during the download. Run the rule again." >> {log}
+          exit 1
+        fi
+      else
+        tar -xzf "$download" -C "$db" uniprot_sprot.fasta.gz &>> {log}
+        rm "$download"
+      fi
+
+      gunzip -f "$db/uniprot_sprot.fasta.gz" &>> {log}
+      makeblastdb -in {output.fasta} -dbtype prot &>> {log}
+      printf "Swiss-Prot\\t%s\\n" "{params.release}" > {output.version}
+      """
 
 
-rule download_pfam:
-  """
-  Downloads and prepares Pfam database.
-  """
-  output:
-    "db/Pfam-A.hmm"
-  log:
-    "logs/download_pfam.log"
-  conda:
-    "envs/pfam.yaml"
-  params:
-    memory="2"
-  threads:
-    1
-  shell:
+  rule download_pfam:
     """
-    wget --directory-prefix db "ftp://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz" &> {log}
-    gunzip db/Pfam-A.hmm.gz &>> {log}
-    hmmpress db/Pfam-A.hmm &>> {log}
+    Downloads the Pfam release named by pfam_release, checks its md5 and prepares it for hmmscan.
     """
+    output:
+      hmm="db/Pfam-A.hmm",
+      version="db/Pfam-A.version"
+    log:
+      "logs/download_pfam.log"
+    conda:
+      "envs/pfam.yaml"
+    params:
+      memory="2",
+      release=PFAM_RELEASE,
+      url="https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam" + PFAM_RELEASE
+    threads:
+      1
+    shell:
+      """
+      wget -O {output.hmm}.gz "{params.url}/Pfam-A.hmm.gz" &> {log}
+      expected=$(wget -q -O - "{params.url}/md5_checksums" | awk '$2 == "Pfam-A.hmm.gz" {{ print $1 }}')
+      actual=$(md5sum {output.hmm}.gz | cut -d " " -f 1)
+      echo "md5 of Pfam-A.hmm.gz: expected $expected, actual $actual" >> {log}
+      if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+        echo "The md5 does not match md5_checksums of Pfam {params.release}" >> {log}
+        exit 1
+      fi
+      gunzip -f {output.hmm}.gz &>> {log}
+      # -f replaces index files left by an earlier attempt
+      hmmpress -f {output.hmm} &>> {log}
+      printf "Pfam\\t%s\\n" "{params.release}" > {output.version}
+      """
 
 
-rule download_rfam:
-  """
-  Downloads and prepares Rfam database.
-  """
-  output:
-    "db/Rfam.cm"
-  log:
-    "logs/download_rfam.log"
-  conda:
-    "envs/rfam.yaml"
-  params:
-    memory="2"
-  threads:
-    1
-  shell:
+  rule download_rfam:
     """
-    wget --directory-prefix db "ftp://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/Rfam.cm.gz" &> {log}
-    gunzip db/Rfam.cm.gz &>> {log}
-    cmpress db/Rfam.cm &>> {log}    
+    Downloads the Rfam release named by rfam_release and prepares it for cmscan.
+    Rfam publishes no checksum, so the file is not checked.
     """
+    output:
+      cm="db/Rfam.cm",
+      version="db/Rfam.version"
+    log:
+      "logs/download_rfam.log"
+    conda:
+      "envs/rfam.yaml"
+    params:
+      memory="2",
+      release=RFAM_RELEASE,
+      url="https://ftp.ebi.ac.uk/pub/databases/Rfam/" + RFAM_RELEASE
+    threads:
+      1
+    shell:
+      """
+      wget -O {output.cm}.gz "{params.url}/Rfam.cm.gz" &> {log}
+      gunzip -f {output.cm}.gz &>> {log}
+      # -F replaces index files left by an earlier attempt
+      cmpress -F {output.cm} &>> {log}
+      printf "Rfam\\t%s\\n" "{params.release}" > {output.version}
+      """
+
+
+  rule download_busco_lineage:
+    """
+    Downloads the BUSCO lineage named by lineage into db/busco_downloads, for a shared database
+    folder. A run with db_dir "db" does not read this copy: BUSCO downloads its own lineage.
+    """
+    output:
+      directory("db/busco_downloads/lineages/" + LINEAGE)
+    log:
+      "logs/download_busco_lineage.log"
+    conda:
+      "envs/busco.yaml"
+    params:
+      memory="2",
+      lineage=LINEAGE
+    threads:
+      1
+    shell:
+      """
+      # --download has to come last on the busco command line
+      busco --download_path db/busco_downloads --download {params.lineage} &> {log}
+      """
+
+
+  rule download_databases:
+    """
+    Downloads the annotation databases and the BUSCO lineage into db/ and lists their releases in
+    db/versions.txt. Run it once in an empty folder to fill a shared database folder.
+    """
+    input:
+      versions=["db/uniprot_sprot.version", "db/Pfam-A.version", "db/Rfam.version"],
+      lineage=["db/busco_downloads/lineages/" + LINEAGE] if LINEAGE else []
+    output:
+      "db/versions.txt"
+    params:
+      memory="2"
+    threads:
+      1
+    run:
+      with open(output[0], "w") as out:
+        for path in input.versions:
+          with open(path) as handle:
+            out.write(handle.read())
+        for path in input.lineage:
+          fields = {}
+          with open(os.path.join(path, "dataset.cfg")) as handle:
+            for line in handle:
+              if "=" in line:
+                key, value = line.strip().split("=", 1)
+                fields[key] = value
+          out.write("BUSCO\t%s\t%s\n" % (fields.get("name", os.path.basename(path)), fields.get("creation_date", "unknown")))
 
 
 rule download_eggnog:

@@ -44,12 +44,13 @@ The conda dependencies are installed in smaller conda environments automatically
 git clone https://github.com/transXpress/transXpress.git
 ~~~~
 
-2. Install [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge)
+2. Install [Miniforge3](https://github.com/conda-forge/miniforge)
 ~~~~
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh"
-bash Mambaforge-Linux-x86_64.sh
-rm Mambaforge-Linux-x86_64.sh
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
+bash Miniforge3-Linux-x86_64.sh
+rm Miniforge3-Linux-x86_64.sh
 ~~~~
+All commands below use `conda`. conda 23.10 and later use the libmamba solver by default, so the solve speed is the same as with mamba. Snakemake runs with `--conda-frontend conda`, because mamba is not on the PATH inside cluster jobs.
 
 3. To ensure correct versions of R packages will be used unset R_LIBS_SITE
 ~~~~
@@ -58,13 +59,18 @@ unset R_LIBS_SITE
 
 4. Setup main transXpress conda environment:
 ~~~~
-mamba activate base
-mamba create -c conda-forge -c bioconda --name transxpress
-mamba activate transxpress
-conda config --set channel_priority disabled
-mamba env update --file envs/default.yaml
+conda config --set channel_priority strict
+PIP_NO_BUILD_ISOLATION=0 conda env create --name transxpress --file envs/default.yaml
+conda activate transxpress
 ~~~~
-* (TIP: if you have a problem updating the default environment try putting python 3.9 into the *defaults.yaml* file)
+* `PIP_NO_BUILD_ISOLATION=0` lets pip build tmhmm.py with the numpy and Cython of the environment.
+* `envs/default.yaml` pins Snakemake 7.32.4, because Snakemake 8 and later have no `--cluster` option.
+
+5. Choose a folder for the conda environments of the pipeline rules and set it in `~/.bashrc`:
+~~~~
+export TRANSXPRESS_CONDA_PREFIX=/path/to/folder
+~~~~
+`TRANSXPRESS_CONDA_PREFIX` is a transXpress variable, not a Snakemake one. `transXpress.sh` passes it to the Snakemake option `--conda-prefix`. When you call `snakemake` directly, add `--conda-prefix "$TRANSXPRESS_CONDA_PREFIX"`. If the variable is not set, Snakemake builds the environments in `.snakemake/conda` in the run folder.
 
 
 6. Create a tab-separated file called *samples.txt* in the assembly directory describing where to find your raw read FASTQ files. Create this file with the following contents:
@@ -90,34 +96,45 @@ mamba env update --file envs/default.yaml
 
 8. Setup other conda environments (This will take a while):
 ~~~~
-snakemake --use-conda --conda-frontend mamba --conda-create-envs-only --cores 10
+snakemake --use-conda --conda-frontend conda --conda-prefix "$TRANSXPRESS_CONDA_PREFIX" --conda-create-envs-only --cores 1
 ~~~~
 
 9. Install SignalP 6.0 (fast):
       * Download SignalP 6.0 fast from https://services.healthtech.dtu.dk/services/SignalP-6.0/ (go to Downloads)
       * Unpack and install signalp:
         ~~~~
-         mamba env create -f envs/signalp.yaml
-         mamba activate signalp
+         conda env create -f envs/signalp.yaml
+         conda activate signalp
          tar zxvf signalp-6.0h.fast.tar.gz
          cd signalp6_fast
          pip install signalp-6-package/
          SIGNALP_DIR=$(python -c "import signalp; import os; print(os.path.dirname(signalp.__file__))" )
          cp -r signalp-6-package/models/* $SIGNALP_DIR/model_weights/
-         mamba deactivate
+         conda deactivate
         ~~~~
         (make sure the conda python is used, or use the full path to python from your conda installation)
 
 10. Install TargetP 2.0:
       * Download TargetP 2.0 from https://services.healthtech.dtu.dk/software.php
-      * extract the tarball and add path to targetp /bin/ folder to the PATH variable
+      * extract the tarball and add the targetp `bin` folder to the PATH of the targetp environment, with an activation script:
         ~~~~
-         mamba env create -f envs/targetp.yaml
-         mamba activate targetp
+         conda env create -f envs/targetp.yaml
+         conda activate targetp
          tar zxvf targetp-2.0.Linux.tar.gz
-         export PATH=$PATH:`pwd`/targetp-2.0/bin
-         mamba deactivate
+         mkdir -p "$CONDA_PREFIX/etc/conda/activate.d" "$CONDA_PREFIX/etc/conda/deactivate.d"
+         printf 'export _TARGETP_OLD_PATH="$PATH"\nexport PATH="$PATH:%s/targetp-2.0/bin"\n' "$(pwd)" > "$CONDA_PREFIX/etc/conda/activate.d/targetp.sh"
+         printf 'export PATH="$_TARGETP_OLD_PATH"\nunset _TARGETP_OLD_PATH\n' > "$CONDA_PREFIX/etc/conda/deactivate.d/targetp.sh"
+         conda deactivate
         ~~~~
+        (the script holds the full path of the `targetp-2.0` folder. If you move the folder, edit the path in `$CONDA_PREFIX/etc/conda/activate.d/targetp.sh`.)
+
+## Notes on results
+
+* Swiss-Prot, Pfam and Rfam have fixed releases, set in `config.yaml`. See [Annotation databases](#annotation-databases).
+* With the default `db_dir: "db"`, BUSCO downloads the newest dataset of its lineage, so BUSCO scores can differ between runs months apart. A shared `db_dir` keeps one lineage dataset for every run.
+* In a run folder made by an older transXpress version, add `--rerun-triggers mtime` to the Snakemake command to keep the old results. The default triggers also look at code and parameter changes and would run the rules again.
+* The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `run_info.txt` in the run folder records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades`, `trinity_inchworm_chrysalis` and `trinity_final` name the machine each one ran on.
+* Trinity does not repeat an assembly, by its own documentation. Its Butterfly stage runs in parallel chunks whose results are collected in the order they finish. Use rnaSPAdes for an assembly that has to be repeatable.
 
 ## Running transXpress
 
@@ -140,9 +157,17 @@ snakemake --conda-frontend conda --use-conda --latency-wait 60 --jobs 10000 --cl
 
 Option 4 - define a profile and run snakemake with the profile:
 ~~~~
-snakemake --profile profiles/ "$@"
+snakemake --profile profiles/slurm "$@"
 ~~~~
-You can find example of a simple profile `config.yaml` for slurm in the `profiles` directory or [here](https://github.com/snakemake-profiles/doc)
+The folder `profiles/slurm` holds a profile `config.yaml` for Slurm. You can find more profiles [here](https://github.com/snakemake-profiles/doc)
+
+### Running the main Snakemake process on a Slurm cluster
+
+The main Snakemake process needs the `transxpress` environment. Run it in its own job and activate the environment first. Replace the two paths with yours:
+~~~
+sbatch --time=5-00:00:00 --mem=4G -o main.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate /path/to/transxpress-env && bash /path/to/transXpress/transXpress.sh'
+~~~
+The time is the limit for the whole run.
 
 ### Running specific steps
 
@@ -159,12 +184,48 @@ You can run specific steps of the pipeline by specifying a rule or a resulting f
 or when using profiles:
 ~~~
 # run only the rules until the multiqc_before_trim rule to check quality of the input data
-snakemake multiqc_before_trim --profile profiles/ "$@"
+snakemake multiqc_before_trim --profile profiles/slurm "$@"
 ~~~
 ~~~
 # run only the rules to produce samples_trimmed.txt file
-snakemake samples_trimmed.txt --profile profiles/ "$@"
+snakemake samples_trimmed.txt --profile profiles/slurm "$@"
 ~~~
+
+## Annotation databases
+
+transXpress annotates the transcripts with Swiss-Prot, Pfam and Rfam. BUSCO checks the assembly against a lineage dataset. The three databases take about 6.1 GB on disk: Pfam 4.8 GB, Rfam 0.7 GB, Swiss-Prot 0.6 GB. The download is about 0.6 GB.
+
+`config.yaml` fixes the release of each database. Keep the quotes:
+~~~
+pfam_release: "38.2"
+rfam_release: "15.1"
+sprot_release: "2026_03"
+~~~
+The download checks Pfam and Swiss-Prot against the md5 their servers publish. Rfam publishes no checksum. The BUSCO server keeps only the newest dataset of each lineage, so a key cannot fix the BUSCO lineage. Only a kept copy can.
+
+### One copy in each run folder
+
+This is the default, `db_dir: "db"`. Each run folder downloads its own databases into `db/`. BUSCO downloads its lineage into `busco_downloads/`.
+
+### One shared copy for many run folders
+
+1. Fill a shared folder once. Start from an empty folder, named after the releases:
+   ~~~
+   mkdir -p /path/to/databases/pfam38.2_rfam15.1_sprot2026_03
+   cd /path/to/databases/pfam38.2_rfam15.1_sprot2026_03
+   cp /path/to/transXpress/config.yaml .
+   /path/to/transXpress/transXpress.sh --snakefile /path/to/transXpress/Snakefile download_databases
+   ~~~
+   The copied `config.yaml` sets the releases and the BUSCO `lineage`. The databases go to `db/`. `db/versions.txt` lists each release and the date of the BUSCO lineage dataset. Cite these in a paper.
+
+   Do not run `download_databases` in this folder a second time. Snakemake can replace files that other runs are reading.
+
+2. In the `config.yaml` of each run folder, set `db_dir` to the `db/` folder and name the lineage:
+   ~~~
+   db_dir: "/path/to/databases/pfam38.2_rfam15.1_sprot2026_03/db"
+   lineage: "viridiplantae_odb12"
+   ~~~
+   A run only reads this folder. BUSCO runs offline from `db_dir/busco_downloads`. If a database file is missing, or `lineage` is empty, Snakemake stops before any job starts and names the problem.
 
 ## Running tests
 ~~~~
@@ -195,28 +256,42 @@ Load them to IGV: File -> Load from File -> select the *bowtie_alignments/{sampl
 ## Possible problems when executing on cluster systems
 
 ### Time limit
-Depending on the setup of your cluster you may have to add time option in the transXpress.sh script.
-If default time (depends on your cluster setup) for submitted job is not sufficient the job may be cancelled due to time limit.
+Slurm jobs need a time limit. The time of each rule is set in `profiles/slurm/config.yaml`: `default-resources` gives 4 hours, and `set-resources` gives longer times to the rules that need them. `transXpress.sh` uses this profile on Slurm clusters.
 
-If this is the case, add time option in submission command in transXpress.sh script.
-
-For example, in case of Slurm change
-~~~~
-snakemake --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm.out -e {log}.slurm.err -n {threads} --mem {params.memory}GB" "$@"
-~~~~
-to
-~~~~
-snakemake --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "sbatch -o {log}.slurm.out -e {log}.slurm.err -n {threads} --mem {params.memory} --time=06:00:00" "$@"
-~~~~
-This sets time limit to 6 hours. You may have to use different time limit based on size of reads used for assembly. 
+If a job is cancelled because of the time limit, raise the time of that rule in `set-resources`. The time you need depends on the size of the reads used for the assembly.
 
 See https://github.com/trinityrnaseq/trinityrnaseq/wiki/Trinity-Computing-Requirements
 
-### Pipeline hangs when cluster cancels the job
-It is possible that cluster cancels the job, but pipeline seems to be still running. This can happen because the pipeline does not receive information whether cluster job completed successfully, failed or is still running. You can add `--cluster-status` option and add script which detects the job status. 
+### How the pipeline learns that a cluster job stopped
+Snakemake asks the cluster for the state of each job it submitted. Without that, Snakemake waits for the job to write a marker file, and a job stopped by the node, by the kernel or by `scancel` writes no marker. Snakemake then waits for that job for ever, with an empty queue and no error message.
 
-See https://snakemake.readthedocs.io/en/stable/tutorial/additional_features.html#using-cluster-status
+On Slurm, `profiles/slurm/config.yaml` sets `cluster-status: slurm-status.sh`. The script maps the Slurm job state to the three words Snakemake expects. It answers most checks from a `squeue` listing it caches in `.snakemake/slurm-status-cache` for 60 seconds, and asks `sacct` only about a job that has left the queue, which keeps the load on the cluster to about one query per minute.
 
-Alternatively, you can use snakemake [profiles](https://github.com/Snakemake-Profiles/doc) which also contain status checking script. 
+A state the script does not recognise counts as a failure, so an unknown state stops the job instead of holding up the run. `restart-times` in the same profile then gives the job another try. When Slurm does not answer at all, the script reports the job as still running, so a cluster outage does not end the run.
 
-See https://snakemake.readthedocs.io/en/v5.1.4/executable.html#profiles 
+For the job state names, see https://slurm.schedmd.com/sacct.html
+
+On LSF and PBS, `transXpress.sh` passes `--cluster` without a status command, so a job that the cluster stops can still leave Snakemake waiting. Write a status script for your scheduler and pass it with `--cluster-status`.
+
+### Flags that belong to your cluster
+Some sbatch flags are site specific: a node to avoid, a processor generation to insist on, an account to charge. `profiles/slurm/config.yaml` takes them in two places, and both are empty by default.
+
+`TRANSXPRESS_SBATCH_EXTRA` applies to every job of a run. Export it before you start the pipeline:
+~~~~
+export TRANSXPRESS_SBATCH_EXTRA="--constraint=gen-d --exclude=badnode1"
+./transXpress.sh
+~~~~
+
+An assembly that is to be compared with another one needs the same processor on both runs, so a constraint that names the CPU generation goes here. Note that Slurm records no processor model, so a feature such as `gen-d` is as close as a constraint gets.
+
+The `extra` resource applies to one rule. Put it in `set-resources` in the same profile, for a rule that has to land on a named node:
+~~~~
+set-resources:
+  - rnaspades:extra=--nodelist=node42 --partition=bigmem
+~~~~
+
+Write that value without quotes. A quoted value keeps its quotes, so sbatch reads two flags as one and rejects them with `Invalid specification`. A rule can hold both `extra` and a time limit, as two entries that name the same rule.
+
+A node name and a partition name usually travel together. The partition a cluster picks for the memory of a job does not have to be one that holds the node you named, and sbatch then answers `Requested node configuration is not available`.
+
+Each job needs a time limit, so `--time` stays on the sbatch line and does not belong in either hook.

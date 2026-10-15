@@ -664,6 +664,9 @@ rule trinity_inchworm_chrysalis:
     memory=config.get("trinity_inchworm_chrysalis_memory", "450")
   threads:
     config.get("trinity_inchworm_chrysalis_threads", 16)
+  # The common failures here are memory and time. A retry asks for the same figures and starts from the
+  # beginning, so it would fail the same way, after hours on a large node.
+  retries: 0
   shell:
     """
     # record the computer this ran on, because the assembly depends on it
@@ -833,6 +836,9 @@ rule trinity_final:
     memory=config.get("trinity_final_memory", "450")
   threads:
     config.get("trinity_final_threads", 16)
+  # The common failures here are memory and time. A retry asks for the same figures and starts from the
+  # beginning, so it would fail the same way, after hours on a large node.
+  retries: 0
   shell:
     """
     # record the computer this ran on, because the assembly depends on it
@@ -892,6 +898,9 @@ rule rnaspades:
     scratch_var=SCRATCH_VAR
   threads:
     config.get("rnaspades_threads", 32)
+  # The common failures here are memory and time. A retry asks for the same figures and starts from the
+  # beginning, so it would fail the same way, after hours on a large node.
+  retries: 0
   shell:
     """
     # record the computer this ran on, because the assembly depends on it
@@ -1215,6 +1224,9 @@ checkpoint align_reads:
     scratch_var=SCRATCH_VAR
   threads:
     config.get("align_reads_threads", 16)
+  # The common failures here are memory and time. A retry asks for the same figures and starts from the
+  # beginning, so it would fail the same way, after hours on a large node.
+  retries: 0
   shell:
     """
     # Remove old markers so the aligner runs again on the trimmed reads.
@@ -1811,6 +1823,9 @@ rule kallisto:
     scratch_var=SCRATCH_VAR
   threads:
     config.get("kallisto_threads", 16)
+  # The common failures here are memory and time. A retry asks for the same figures and starts from the
+  # beginning, so it would fail the same way, after hours on a large node.
+  retries: 0
   shell:
     """
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')

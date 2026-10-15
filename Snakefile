@@ -27,6 +27,11 @@ if TRANSDECODER_ORFS not in ["all", "single_best"]:
   raise ValueError("transdecoder_orfs must be \"all\" or \"single_best\". The config gives %s" % TRANSDECODER_ORFS)
 TRANSDECODER_ORFS_FILE = {"all": "transcriptome_all_orfs.pep", "single_best": "transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
 
+# The rnaSPAdes transcript set that becomes transcriptome.fasta. rnaSPAdes always writes all three.
+RNASPADES_FILTER = str(config.get("rnaspades_filter", "default"))
+if RNASPADES_FILTER not in ["default", "hard", "soft"]:
+  raise ValueError("rnaspades_filter must be \"default\", \"hard\" or \"soft\". The config gives %s" % RNASPADES_FILTER)
+
 # The folder of the annotation databases. "db" keeps one copy in each run folder, which the
 # pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
 DB_DIR = str(config.get("db_dir", "db")).rstrip("/")
@@ -829,14 +834,16 @@ rule trinity_final:
 
 rule rnaspades:
   """
-  Runs rnaSPAdes assembly.
+  Runs rnaSPAdes assembly. rnaSPAdes writes three transcript sets, and
+  rnaspades_filter in config.yaml picks the one that becomes transcriptome.fasta.
   """
   input:
     samples="samples_trimmed.yaml",
   output:
-    transcriptome="rnaspades_out/transcripts.fasta",
+    default="rnaspades_out/transcripts.fasta",
+    hard="rnaspades_out/hard_filtered_transcripts.fasta",
+    soft="rnaspades_out/soft_filtered_transcripts.fasta"
     ##config["annotated_fasta_prefix"]+"_spades_out/K"+THEKMER+"/assembly_graph_with_scaffolds.gfa"
-    gene_trans_map="rnaspades_out/transcripts.gene_trans_map"
   log:
     "logs/rnaspades.log"
   conda:
@@ -853,32 +860,40 @@ rule rnaspades:
     rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o rnaspades_out {config[strand_specific]} --only-assembler --checkpoints last {config[kmers]} &>> {log}
 
     # The checkpoint data is only useful to a restart, so it goes once the assembly is in place
-    if [ -s {output.transcriptome} ]; then
+    if [ -s {output.default} ]; then
       rm -rf rnaspades_out/*/saves rnaspades_out/saves &>> {log}
     fi
-
-    ##Make a fake gene_trans_map file
-    seqkit seq -n {output.transcriptome} | while read id ; do echo -e "$id\\t$id" ; done > {output.gene_trans_map} 2>> {log}
     """
  
 
+def transcriptome_copy_input(wildcards):
+  if config["assembler"] == "rnaspades":
+    return {"transcriptome": getattr(rules.rnaspades.output, RNASPADES_FILTER)}
+  return {"transcriptome": rules.trinity_final.output.transcriptome,
+          "gene_trans_map": rules.trinity_final.output.gene_trans_map}
+
+
 rule transcriptome_copy:
   """
-  Copies the assembled transcriptome to the transxpress directory.
+  Copies the assembled transcriptome to the transxpress directory, with its
+  gene to transcript map. Trinity writes the map. For rnaSPAdes the rule builds
+  it from the transcript names: NODE_97_length_6237_cov_11.98_g8_i2 is isoform 2
+  of gene g8, so the map line is "g8<TAB>NODE_97_length_6237_cov_11.98_g8_i2".
+  A name without _g<N>_i<M> at its end stops the rule.
   """
   input:
-    transcriptome=rules.rnaspades.output.transcriptome if config["assembler"]=="rnaspades" else rules.trinity_final.output.transcriptome,
-    gene_trans_map=rules.rnaspades.output.gene_trans_map if config["assembler"]=="rnaspades" else rules.trinity_final.output.gene_trans_map,
+    unpack(transcriptome_copy_input)
   output:
     transcriptome="transcriptome.fasta",
     gene_trans_map="transcriptome.gene_trans_map"
   log:
     "logs/transcriptome_copy.log"
-  shell:
-    """
-    cp -p {input.transcriptome} {output.transcriptome} &> {log}
-    cp -p {input.gene_trans_map} {output.gene_trans_map} &>> {log}
-    """
+  run:
+    shell("cp -p {input.transcriptome} {output.transcriptome} &> {log}")
+    if config["assembler"] == "rnaspades":
+      shell("""seqkit seq -n -i {output.transcriptome} 2>> {log} | awk 'BEGIN {{ OFS = "\\t" }} match($0, /_g[0-9]+_i[0-9]+$/) {{ split(substr($0, RSTART + 1), part, "_"); print part[1], $0; next }} {{ print "ERROR: transcript " $0 " has no _g<N>_i<M> at the end of its name, so its gene is unknown" > "/dev/stderr"; bad = 1 }} END {{ exit bad }}' > {output.gene_trans_map} 2>> {log}""")
+    else:
+      shell("cp -p {input.gene_trans_map} {output.gene_trans_map} &>> {log}")
 
 
 rule trinity_stats:

@@ -12,6 +12,15 @@ trimmomatic_parameters: "ILLUMINACLIP:../adapters.fasta:3:30:10 SLIDINGWINDOW:4:
 # set to trinity or rnaspades
 assembler: "trinity"
 
+# Only for rnaSPAdes assembler:
+# rnaSPAdes writes three transcript sets. Each one removes transcripts that are short or have low
+# read coverage, with stricter cutoffs from soft to hard. This key picks the set that becomes
+# transcriptome.fasta. The other two stay in rnaspades_out/.
+# "default": transcripts.fasta, the set the SPAdes manual recommends without a specific need.
+# "hard": hard_filtered_transcripts.fasta, only long transcripts with rather high expression.
+# "soft": soft_filtered_transcripts.fasta, also short, low expressed transcripts, likely to hold junk.
+rnaspades_filter: "default"
+
 # may consider canging TRINITY_PARAMS += "  --min_kmer_cov 1 --min_glue 2  --no_normalize_reads"
 trinity_parameters: "--seqType fq"
 

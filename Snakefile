@@ -1676,6 +1676,9 @@ rule kallisto:
   shell:
     """
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
+    # abundance_estimates_to_matrix.pl writes the matrix rows in Perl hash order, which is random
+    # in each run. A fixed Perl hash seed gives the same row order in each run.
+    export PERL_HASH_SEED=0
 
     assembler="{config[assembler]}"
     strand_specific="{config[strand_specific]}"

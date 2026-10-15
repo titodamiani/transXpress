@@ -1917,26 +1917,6 @@ if not DB_SHARED:
           out.write("BUSCO\t%s\t%s\n" % (fields.get("name", os.path.basename(path)), fields.get("creation_date", "unknown")))
 
 
-rule download_eggnog:
-  """
-  For future development.
-  Downloads eggnog database.
-  """
-  output:
-    "db/NOG.annotations.tsv"
-  log:
-    "logs/download_eggnog.log"
-  params:
-    memory="2"
-  threads:
-    1
-  shell:
-    """
-    wget --directory-prefix db "http://eggnogdb.embl.de/download/latest/data/NOG/NOG.annotations.tsv.gz" &> {log}    
-    gunzip db/NOG.annotations.tsv.gz &>> {log}
-    """
-
-
 rule annotated_fasta:
   """
   Puts annotations in the headers of transcripts/proteins in the 

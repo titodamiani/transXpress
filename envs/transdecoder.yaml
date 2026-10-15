@@ -5,4 +5,5 @@ dependencies:
   # The rules run the two TransDecoder stages, TransDecoder.LongOrfs and TransDecoder.Predict.
   # The package keeps them in util/ next to the TransDecoder wrapper, outside bin/, and the
   # rules find them from the path of the wrapper.
-  - transdecoder=6.0.0
+  # Build 0 of 6.0.0 links no TransDecoder wrapper into bin/, so the pin asks for build 1 or later.
+  - "transdecoder[version='6.0.0',build_number='>=1']"

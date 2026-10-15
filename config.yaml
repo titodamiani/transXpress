@@ -94,7 +94,8 @@ sprot_release: "2026_03"
 # The downstream rules (annotation, transcriptome_annotated.*) read this set.
 # "all": every ORF that TransDecoder.Predict accepts. A transcript can give several proteins.
 # "single_best": one ORF per transcript, picked by Pfam or SwissProt hit first and by length second.
-# The pipeline saves both sets, as transcriptome_all_orfs.pep and transcriptome_single_best_orf.pep.
+# The pipeline saves both sets, each as proteins (.pep), coding sequences (.cds) and ORF positions on
+# the transcripts (.gff3, .bed): transcriptome_all_orfs.* and transcriptome_single_best_orf.*.
 transdecoder_orfs: "all"
 
 # Memory in GB and the thread count of the rules whose size follows the dataset.

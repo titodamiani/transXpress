@@ -70,8 +70,8 @@ rule all:
     "samples_trimmed.txt",
     "transcriptome.fasta",
     "transcriptome.pep",
-    "transcriptome_all_orfs.pep",
-    "transcriptome_single_best_orf.pep",
+    expand("transcriptome_all_orfs.{ext}", ext=["pep", "cds", "gff3", "bed"]),
+    expand("transcriptome_single_best_orf.{ext}", ext=["pep", "cds", "gff3", "bed"]),
     "transcriptome_stats.txt",
     "ExN50_plot.pdf",
     "transcriptome_annotated.fasta",
@@ -979,6 +979,8 @@ rule transdecoder_longorfs:
     """
     # LongOrfs skips a step when its checkpoint file exists, so a rerun starts from an empty folder
     rm -rf transdecoder/{input.transcriptome}.transdecoder_dir &> {log}
+    # A fixed Perl hash seed gives the same output order in each run
+    export PERL_HASH_SEED=0
     TransDecoder.LongOrfs -t {input.transcriptome} --output_dir transdecoder &>> {log} 
     cp -p transdecoder/{input.transcriptome}.transdecoder_dir/longest_orfs.pep {output.orfs} &>> {log}
     """
@@ -988,11 +990,17 @@ rule transdecoder_predict_all:
   """
   Runs second stage of Transdecoder predicting the likely coding regions based
   on Pfam and SwissProt hits. Keeps every ORF that Predict accepts, so a
-  transcript can give several proteins.
+  transcript can give several proteins. Saves the proteins (.pep), the coding
+  sequences (.cds), and the ORF positions on the transcripts (.gff3, .bed).
 
   Predict skips a step when its checkpoint file exists, and the checkpoint name
   does not include --single_best_only. So each ORF set runs on its own copy of
-  the LongOrfs folder, without the checkpoints of an earlier Predict run.
+  the LongOrfs folder, without the checkpoints of an earlier Predict run. The
+  copy is deleted when the four files are saved.
+
+  Predict reads the ORFs of one transcript in Perl hash order, which is random
+  in each run. A fixed hash seed gives the same output order and the same pick
+  among tied ORFs in each run.
   """
   input:
     transcriptome="transcriptome.fasta",
@@ -1000,7 +1008,10 @@ rule transdecoder_predict_all:
     pfam="annotations/pfam_orfs.out",
     blastp="annotations/sprotblastp_orfs.out"
   output:
-    "transcriptome_all_orfs.pep"
+    pep="transcriptome_all_orfs.pep",
+    cds="transcriptome_all_orfs.cds",
+    gff3="transcriptome_all_orfs.gff3",
+    bed="transcriptome_all_orfs.bed"
   log:
     "logs/transdecoder_predict_all.log"
   conda:
@@ -1016,8 +1027,13 @@ rule transdecoder_predict_all:
     mkdir -p {params.workdir} &>> {log}
     cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
     rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
+    export PERL_HASH_SEED=0
     TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output.pep} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.cds {output.cds} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.gff3 {output.gff3} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.bed {output.bed} &>> {log}
+    rm -rf {params.workdir} &>> {log}
     """
 
 
@@ -1033,7 +1049,10 @@ rule transdecoder_predict_single_best:
     pfam="annotations/pfam_orfs.out",
     blastp="annotations/sprotblastp_orfs.out"
   output:
-    "transcriptome_single_best_orf.pep"
+    pep="transcriptome_single_best_orf.pep",
+    cds="transcriptome_single_best_orf.cds",
+    gff3="transcriptome_single_best_orf.gff3",
+    bed="transcriptome_single_best_orf.bed"
   log:
     "logs/transdecoder_predict_single_best.log"
   conda:
@@ -1049,8 +1068,13 @@ rule transdecoder_predict_single_best:
     mkdir -p {params.workdir} &>> {log}
     cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
     rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
+    export PERL_HASH_SEED=0
     TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} --single_best_only &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output.pep} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.cds {output.cds} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.gff3 {output.gff3} &>> {log}
+    cp -p {params.workdir}/{input.transcriptome}.transdecoder.bed {output.bed} &>> {log}
+    rm -rf {params.workdir} &>> {log}
     """
 
 

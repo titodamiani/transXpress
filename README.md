@@ -267,7 +267,7 @@ Snakemake asks the cluster for the state of each job it submitted. Without that,
 
 On Slurm, `profiles/slurm/config.yaml` sets `cluster-status: slurm-status.sh`. The script maps the Slurm job state to the three words Snakemake expects. It answers most checks from a `squeue` listing it caches in `.snakemake/slurm-status-cache` for 60 seconds, and asks `sacct` only about a job that has left the queue, which keeps the load on the cluster to about one query per minute.
 
-A state the script does not recognise counts as a failure, so an unknown state stops the job instead of holding up the run. `restart-times` in the same profile then gives the job another try. When Slurm does not answer at all, the script reports the job as still running, so a cluster outage does not end the run.
+A state the script does not recognise counts as a failure, so an unknown state stops the job instead of holding up the run. `restart-times` in the same profile then gives the job another try. Five rules set `retries: 0` and get no second try: `rnaspades`, `trinity_inchworm_chrysalis`, `trinity_final`, `kallisto` and `align_reads`. They fail mostly on memory or time, and a retry asks for the same figures and starts from the beginning. When Slurm does not answer at all, the script reports the job as still running, so a cluster outage does not end the run.
 
 For the job state names, see https://slurm.schedmd.com/sacct.html
 
@@ -295,3 +295,29 @@ Write that value without quotes. A quoted value keeps its quotes, so sbatch read
 A node name and a partition name usually travel together. The partition a cluster picks for the memory of a job does not have to be one that holds the node you named, and sbatch then answers `Requested node configuration is not available`.
 
 Each job needs a time limit, so `--time` stays on the sbatch line and does not belong in either hook.
+
+### Working files on the node's local disk
+Four rules write many large or short-lived working files: `rnaspades`, `trinity_butterfly_parallel`, `kallisto` and `align_reads`. On a cluster, the run folder usually sits on network storage that all users share, and many clusters ask that such work runs on the node's own disk.
+
+The `scratch` key in `config.yaml` names the environment variable that holds a folder on the node's local disk in a cluster job, with its `$`:
+~~~~
+scratch: "$SCRATCH"
+~~~~
+
+Ask your cluster documentation which variable that is. On some clusters `$TMPDIR` is in memory, and a file there counts against the memory of the job. The default `""` runs every rule in the run folder.
+
+With the key set, each of the four rules makes its own folder under that variable, works there, and copies its files to the run folder when it ends:
+
+| Rule | Works on the local disk | Copied to the run folder |
+|---|---|---|
+| `rnaspades` | the whole `rnaspades_out` | `rnaspades_out`, which replaces the folder in the run folder |
+| `trinity_butterfly_parallel` | the files of each small assembly, through Trinity's `--workdir` | nothing: Trinity writes the fasta of each assembly to `trinity_out_dir/read_partitions` itself |
+| `kallisto`, `align_reads` | the indexes and the per replicate results | every file, over the files in the run folder |
+
+When the variable is not set in a job, for example on a computer without a cluster, the rule works in the run folder.
+
+When a rule fails, it copies its local files to the place the rule writes them without the local disk, so they can be read to find the cause. The files under 100 MB go first: when a job reaches its time limit, Slurm stops it and kills it 30 seconds later by default (`KillWait`), so only those may arrive. A node that crashes leaves nothing, because the local disk is out of reach. The rule log in `logs/` holds the output of the tool in every case.
+
+The local disk of a node is shared by the jobs on it, and a cluster may not reserve disk space for a job. `rnaspades` needed about 120 GB of working files for 9 libraries of about 23 million read pairs each.
+
+`rnaspades` runs without `--checkpoints`. On the local disk, the folder is deleted at the end of the job, so a restart point would not survive.

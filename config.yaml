@@ -12,6 +12,14 @@ trimmomatic_parameters: "ILLUMINACLIP:adapters.fasta:2:30:10 SLIDINGWINDOW:4:5 L
 # set to trinity or rnaspades
 assembler: "trinity"
 
+# Node-local disk. On a cluster, the rules rnaspades, trinity_butterfly_parallel, kallisto and
+# align_reads can work in a folder on the node's own disk, and copy their files to the run folder
+# when they end. This keeps their working files off the shared network storage.
+# Give the environment variable that holds that folder in a cluster job, with its $, for example
+# "$SCRATCH" or "$TMPDIR". Pick one that is on a disk: on some clusters $TMPDIR is in memory.
+# "" runs every rule in the run folder.
+scratch: ""
+
 # may consider canging TRINITY_PARAMS += "  --min_kmer_cov 1 --min_glue 2  --no_normalize_reads"
 trinity_parameters: "--seqType fq"
 

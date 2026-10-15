@@ -21,6 +21,10 @@ assembler: "trinity"
 # "soft": soft_filtered_transcripts.fasta, also short, low expressed transcripts, likely to hold junk.
 rnaspades_filter: "default"
 
+# Node-local folder of the heavy rules, for example "$SCRATCH". "" runs every rule in the run folder.
+# See config.yaml.
+scratch: ""
+
 # may consider canging TRINITY_PARAMS += "  --min_kmer_cov 1 --min_glue 2  --no_normalize_reads"
 trinity_parameters: "--seqType fq"
 

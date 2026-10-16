@@ -26,7 +26,7 @@ trinity_parameters: "--seqType fq"
 # set the organism (plant or non-plant) for targetp: pl or non-pl
 targetp: "non-pl"
 
-# set the organism (eukarota or other) for SignalP: eukarya or other
+# set the organism group for SignalP: "eukarya" for eukaryotes, "other" for bacteria and archaea
 signalp: "eukarya"
 
 # Strand-specific RNA-Seq read orientation.
@@ -53,7 +53,7 @@ strand_specific: ""
 # Only for rnaSPAdes assembler:
 # rnaSPAdes writes three transcript sets. Each one removes transcripts that are short or have low
 # read coverage, with stricter cutoffs from soft to hard. This key picks the set that becomes
-# transcriptome.fasta. The other two stay in rnaspades_out/.
+# transcriptome.fasta. The other two stay in results/assembly/rnaspades/.
 # "default": transcripts.fasta, the set the SPAdes manual recommends without a specific need.
 # "hard": hard_filtered_transcripts.fasta, only long transcripts with rather high expression.
 # "soft": soft_filtered_transcripts.fasta, also short, low expressed transcripts, likely to hold junk.
@@ -94,10 +94,10 @@ dispersion: "0.1"
 lineage: "viridiplantae_odb12"
 
 # Folder of the annotation databases and the BUSCO lineage.
-# "db" keeps one copy in each run folder, which the pipeline downloads.
+# "resources/db" keeps one copy in each run folder, which the pipeline downloads.
 # Any other folder is a shared copy that the pipeline only reads.
 # See "Annotation databases" in README.md.
-db_dir: "db"
+db_dir: "resources/db"
 
 # Releases of the annotation databases. Keep the quotes.
 # Pfam releases: https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/

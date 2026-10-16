@@ -32,6 +32,11 @@ RNASPADES_FILTER = str(config.get("rnaspades_filter", "default"))
 if RNASPADES_FILTER not in ["default", "hard", "soft"]:
   raise ValueError("rnaspades_filter must be \"default\", \"hard\" or \"soft\". The config gives %s" % RNASPADES_FILTER)
 
+# The organism group that SignalP predicts signal peptides for.
+SIGNALP_ORGANISM = str(config.get("signalp", "eukarya"))
+if SIGNALP_ORGANISM not in ["eukarya", "other"]:
+  raise ValueError("signalp must be \"eukarya\" or \"other\". The config gives %s" % SIGNALP_ORGANISM)
+
 # The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH".
 # "" runs every rule in the run folder. The heavy rules read the variable with bash, inside the job,
 # because only the job knows its value.
@@ -1816,13 +1821,14 @@ rule signalp_parallel:
   conda:
     "signalp"
   params:
-    memory="4"
+    memory="4",
+    organism=SIGNALP_ORGANISM
   threads:
     1
   shell:
     """
     TMP=results/annotation/chunks/tmp/signalp_{wildcards.index}
-    signalp6 --fastafile {input} --organism eukarya --output_dir $TMP --format none --mode fast &> {log}
+    signalp6 --fastafile {input} --organism {params.organism} --output_dir $TMP --format none --mode fast &> {log}
     mv $TMP/prediction_results.txt {output}
     rm -r $TMP
     """

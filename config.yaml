@@ -26,7 +26,7 @@ trinity_parameters: "--seqType fq"
 # set the organism (plant or non-plant) for targetp: pl or non-pl
 targetp: "non-pl"
 
-# set the organism (eukarota or other) for SignalP: eukarya or other
+# set the organism group for SignalP: "eukarya" for eukaryotes, "other" for bacteria and archaea
 signalp: "eukarya"
 
 # Strand-specific RNA-Seq read orientation.

@@ -41,10 +41,10 @@ if SCRATCH and not re.fullmatch(r"\$[A-Za-z_][A-Za-z0-9_]*", SCRATCH):
   raise ValueError("scratch must be \"\" or one environment variable with its $, for example \"$SCRATCH\". The config gives %s" % SCRATCH)
 SCRATCH_VAR = SCRATCH[1:]
 
-# The folder of the annotation databases. "db" keeps one copy in each run folder, which the
+# The folder of the annotation databases. "resources/db" keeps one copy in each run folder, which the
 # pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
-DB_DIR = str(config.get("db_dir", "db")).rstrip("/")
-DB_SHARED = DB_DIR != "db"
+DB_DIR = str(config.get("db_dir", "resources/db")).rstrip("/")
+DB_SHARED = DB_DIR != "resources/db"
 LINEAGE = config.get("lineage", "")
 
 # The annotation rules run only after the fasta_split checkpoints, hours into a run, so a
@@ -73,7 +73,7 @@ if DB_SHARED:
 # https://github.com/griffithlab/rnaseq_tutorial/wiki/Trinity-Assembly-And-Analysis
 
 # These rules don't need to be sent to a cluster
-localrules: all, clean, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
+localrules: all, clean, delete_intermediates, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
 # A rule with a wildcard keeps its logs in logs/<rule>/, and the wildcard is only in the file name.
 # The cluster writes its own log next to the rule log before the job starts, and not every cluster
@@ -112,19 +112,35 @@ rule all:
     "results/qc/WARNING_fastqc_before_trim_overview.txt",
     "results/qc/FastQC_comparison_after_trim.txt",
     "results/expression/edger",
-    "run_info.txt"
+    "results/run_info.txt"
 
 rule clean:
   """
-  Removes files from the transxpress directory when specifically called by the user.
+  Not run by default. Deletes the results and the logs of the run, so the next run starts from the
+  beginning. Keeps config.yaml, the samples file, resources/ and .snakemake/.
   """
-
   shell:
     """
-    if [ -f samples_trimmed.txt ]; then
-      cut -f 2 < samples_trimmed.txt | xargs --no-run-if-empty rm -rf
+    rm -rf results logs
+    """
+
+
+rule delete_intermediates:
+  """
+  Not run by default. Deletes the large working files that no rule names as its output, so every
+  result stays and a later snakemake run in this folder has nothing to do: the trimmed reads, the
+  kallisto, bowtie2 and RSEM indexes, and the Trinity working folder apart from the files that the
+  Trinity rules name.
+  """
+  shell:
+    """
+    rm -f results/trimmomatic/reads/*.fastq.gz
+    rm -f results/expression/kallisto/transcriptome.fasta.kallisto_idx
+    # the bowtie2.ok marker goes with the index, so a later align_reads run builds the index again
+    rm -f results/expression/bowtie2_rsem/transcriptome.fasta.bowtie2.* results/expression/bowtie2_rsem/transcriptome.fasta.RSEM.*
+    if [ -d results/assembly/trinity ]; then
+      find results/assembly/trinity -mindepth 1 -maxdepth 1 ! -name recursive_trinity.cmds ! -name recursive_trinity.cmds.completed ! -name parallel_jobs -exec rm -rf {{}} +
     fi
-    rm -rf trinity_* rnaspades_* tmp* log TMHMM* kallisto* transcriptome* pipeliner* annotation* transdecoder* trimmomatic* samples_trimmed* ExN50_plot.pdf multiqc fastqc edgeR_trans run_info.txt
     """
 
 
@@ -135,7 +151,7 @@ rule run_info:
   count, so a later run can be compared against this one.
   """
   output:
-    "run_info.txt"
+    "results/run_info.txt"
   params:
     memory="2"
   threads:
@@ -1051,7 +1067,7 @@ rule busco:
     memory=config.get("busco_memory", "10"),
     lineage=LINEAGE,
     # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
-    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else ""
+    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else "--download_path resources/busco_downloads"
   threads:
     config.get("busco_threads", 16)
   shell:
@@ -1962,7 +1978,7 @@ rule kallisto:
     """
 
  
-# The download rules exist only when db_dir is "db", so a run never writes to a shared
+# The download rules exist only when db_dir is "resources/db", so a run never writes to a shared
 # database folder. A shared folder is filled once with the download_databases target.
 if not DB_SHARED:
 
@@ -1975,8 +1991,8 @@ if not DB_SHARED:
     release archive, which holds the same fasta file.
     """
     output:
-      fasta="db/uniprot_sprot.fasta",
-      version="db/uniprot_sprot.version"
+      fasta="resources/db/uniprot_sprot.fasta",
+      version="resources/db/uniprot_sprot.version"
     log:
       "logs/download_sprot.log"
     conda:
@@ -2049,8 +2065,8 @@ if not DB_SHARED:
     Downloads the Pfam release named by pfam_release, checks its md5 and prepares it for hmmscan.
     """
     output:
-      hmm="db/Pfam-A.hmm",
-      version="db/Pfam-A.version"
+      hmm="resources/db/Pfam-A.hmm",
+      version="resources/db/Pfam-A.version"
     log:
       "logs/download_pfam.log"
     conda:
@@ -2084,8 +2100,8 @@ if not DB_SHARED:
     Rfam publishes no checksum, so the file is not checked.
     """
     output:
-      cm="db/Rfam.cm",
-      version="db/Rfam.version"
+      cm="resources/db/Rfam.cm",
+      version="resources/db/Rfam.version"
     log:
       "logs/download_rfam.log"
     conda:
@@ -2108,11 +2124,12 @@ if not DB_SHARED:
 
   rule download_busco_lineage:
     """
-    Downloads the BUSCO lineage named by lineage into db/busco_downloads, for a shared database
-    folder. A run with db_dir "db" does not read this copy: BUSCO downloads its own lineage.
+    Downloads the BUSCO lineage named by lineage into resources/db/busco_downloads, for a shared database
+    folder. A run with db_dir "resources/db" does not read this copy: BUSCO downloads its own lineage
+    into resources/busco_downloads.
     """
     output:
-      directory("db/busco_downloads/lineages/" + LINEAGE)
+      directory("resources/db/busco_downloads/lineages/" + LINEAGE)
     log:
       "logs/download_busco_lineage.log"
     conda:
@@ -2125,20 +2142,20 @@ if not DB_SHARED:
     shell:
       """
       # --download has to come last on the busco command line
-      busco --download_path db/busco_downloads --download {params.lineage} &> {log}
+      busco --download_path resources/db/busco_downloads --download {params.lineage} &> {log}
       """
 
 
   rule download_databases:
     """
-    Downloads the annotation databases and the BUSCO lineage into db/ and lists their releases in
-    db/versions.txt. Run it once in an empty folder to fill a shared database folder.
+    Downloads the annotation databases and the BUSCO lineage into resources/db/ and lists their releases
+    in resources/db/versions.txt. Run it once in an empty folder to fill a shared database folder.
     """
     input:
-      versions=["db/uniprot_sprot.version", "db/Pfam-A.version", "db/Rfam.version"],
-      lineage=["db/busco_downloads/lineages/" + LINEAGE] if LINEAGE else []
+      versions=["resources/db/uniprot_sprot.version", "resources/db/Pfam-A.version", "resources/db/Rfam.version"],
+      lineage=["resources/db/busco_downloads/lineages/" + LINEAGE] if LINEAGE else []
     output:
-      "db/versions.txt"
+      "resources/db/versions.txt"
     params:
       memory="2"
     threads:

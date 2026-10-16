@@ -128,12 +128,71 @@ snakemake --use-conda --conda-frontend conda --conda-prefix "$TRANSXPRESS_CONDA_
         ~~~~
         (the script holds the full path of the `targetp-2.0` folder. If you move the folder, edit the path in `$CONDA_PREFIX/etc/conda/activate.d/targetp.sh`.)
 
+## Output layout
+
+A run writes into `results/`, with one folder per step. Each step folder holds its answer files at the top and its working files in a subfolder. The rule logs go to `logs/`, and the databases of the default `db_dir` go to `resources/`.
+
+~~~
+<run folder>/
+  config.yaml  samples.txt
+  logs/          <rule>.log, and <rule>/<wildcard>.log for a rule with many jobs
+  resources/     db/  busco_downloads/
+  results/
+    run_info.txt
+    qc/            fastqc_before_trim/  fastqc_after_trim/  multiqc_before_trim/  multiqc_after_trim/
+                   multiqc_before_trim.txt  multiqc_after_trim.txt
+                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
+                   busco/  busco_report.txt
+                   transcriptome_stats.txt  transcriptome_exN50.tsv  ExN50_plot.pdf
+    trimmomatic/   samples_trimmed.txt  samples_trimmed.yaml
+                   reads/         the trimmed reads
+    assembly/      transcriptome.fasta  transcriptome.gene_trans_map
+                   rnaspades/     the rnaSPAdes output folder
+                   trinity/  trinity.Trinity.fasta  trinity.Trinity.fasta.gene_trans_map
+    transdecoder/  transcriptome.orfs  transcriptome.pep
+                   transcriptome_all_orfs.{pep,cds,gff3,bed}
+                   transcriptome_single_best_orf.{pep,cds,gff3,bed}
+                   longorfs/      the TransDecoder.LongOrfs folder
+    annotation/    {pfam,sprotblastp}_orfs.out  {rfam,sprotblastx}_fasta.out
+                   {signalp,targetp,tmhmm}_pep.out
+                   transcriptome_annotated.fasta  transcriptome_annotated.pep  transcriptome_TPM_blast.csv
+                   chunks/        the split inputs and the result of each chunk
+    expression/    transcriptome_expression_isoform.tsv  transcriptome_expression_gene.tsv
+                   kallisto/      kallisto.{isoform,gene}.* matrices, the index, one folder per replicate
+                   bowtie2_rsem/  the indexes, one folder per replicate, igv/ (only with align_reads)
+                   edger/         the edgeR tests, one set of files for each pair of conditions
+~~~
+
+The files most analyses start from:
+
+| File | Content |
+|---|---|
+| `results/assembly/transcriptome.fasta` | the assembly |
+| `results/assembly/transcriptome.gene_trans_map` | the gene of each transcript |
+| `results/transdecoder/transcriptome.pep` | the proteins of the ORF set that `transdecoder_orfs` picks |
+| `results/annotation/*.out` | the Pfam, Swiss-Prot, Rfam, SignalP, TargetP and TMHMM results |
+| `results/annotation/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
+| `results/expression/transcriptome_expression_isoform.tsv`, `_gene.tsv` | the TMM-normalized TPM of each transcript and gene, or the TPM when TMM is not possible |
+| `results/expression/kallisto/kallisto.{isoform,gene}.counts.matrix` | the estimated read counts |
+| `results/qc/busco_report.txt` | the BUSCO score of the assembly |
+
+Two rules delete files, and neither runs unless you name it:
+
+| Rule | Deletes | Keeps |
+|---|---|---|
+| `clean` | `results/` and `logs/` | `config.yaml`, the samples file, `resources/`, `.snakemake/` |
+| `delete_intermediates` | the trimmed reads, the kallisto, bowtie2 and RSEM indexes, and the Trinity working files | every result. A later `snakemake` run in the folder has nothing to do |
+
+~~~
+./transXpress.sh delete_intermediates
+~~~
+
 ## Notes on results
 
 * Swiss-Prot, Pfam and Rfam have fixed releases, set in `config.yaml`. See [Annotation databases](#annotation-databases).
-* With the default `db_dir: "db"`, BUSCO downloads the newest dataset of its lineage, so BUSCO scores can differ between runs months apart. A shared `db_dir` keeps one lineage dataset for every run.
-* In a run folder made by an older transXpress version, add `--rerun-triggers mtime` to the Snakemake command to keep the old results. The default triggers also look at code and parameter changes and would run the rules again.
-* The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `run_info.txt` in the run folder records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades`, `trinity_inchworm_chrysalis` and `trinity_final` name the machine each one ran on.
+* With the default `db_dir: "resources/db"`, BUSCO downloads the newest dataset of its lineage, so BUSCO scores can differ between runs months apart. A shared `db_dir` keeps one lineage dataset for every run.
+* The pipeline reads and writes the paths in [Output layout](#output-layout). A run folder that holds its files at other paths runs every step again, so start each run in its own folder.
+* The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `results/run_info.txt` records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades`, `trinity_inchworm_chrysalis` and `trinity_final` name the machine each one ran on.
 * TransDecoder and Trinity each have a Perl script that writes records in Perl hash order, which changes in each run. The TransDecoder rules, `kallisto` and `trinity_stats` set `PERL_HASH_SEED=0`, so two runs write the same records in the same order. Upstream reports: [TransDecoder/TransDecoder#212](https://github.com/TransDecoder/TransDecoder/issues/212), [trinityrnaseq/trinityrnaseq#1478](https://github.com/trinityrnaseq/trinityrnaseq/issues/1478).
 * Trinity does not repeat an assembly, by its own documentation. Its Butterfly stage runs in parallel chunks whose results are collected in the order they finish. Use rnaSPAdes for an assembly that has to be repeatable.
 
@@ -178,8 +237,8 @@ You can run specific steps of the pipeline by specifying a rule or a resulting f
 ./transXpress.sh multiqc_before_trim
 ~~~
 ~~~
-# run only the rules to produce samples_trimmed.txt file
-./transXpress.sh samples_trimmed.txt
+# run only the rules to produce the samples_trimmed.txt file
+./transXpress.sh results/trimmomatic/samples_trimmed.txt
 ~~~
 
 or when using profiles:
@@ -188,8 +247,8 @@ or when using profiles:
 snakemake multiqc_before_trim --profile profiles/slurm "$@"
 ~~~
 ~~~
-# run only the rules to produce samples_trimmed.txt file
-snakemake samples_trimmed.txt --profile profiles/slurm "$@"
+# run only the rules to produce the samples_trimmed.txt file
+snakemake results/trimmomatic/samples_trimmed.txt --profile profiles/slurm "$@"
 ~~~
 
 ## Annotation databases
@@ -206,7 +265,7 @@ The download checks Pfam and Swiss-Prot against the md5 their servers publish. R
 
 ### One copy in each run folder
 
-This is the default, `db_dir: "db"`. Each run folder downloads its own databases into `db/`. BUSCO downloads its lineage into `busco_downloads/`.
+This is the default, `db_dir: "resources/db"`. Each run folder downloads its own databases into `resources/db/`. BUSCO downloads its lineage into `resources/busco_downloads/`.
 
 ### One shared copy for many run folders
 
@@ -217,13 +276,13 @@ This is the default, `db_dir: "db"`. Each run folder downloads its own databases
    cp /path/to/transXpress/config.yaml .
    /path/to/transXpress/transXpress.sh --snakefile /path/to/transXpress/Snakefile download_databases
    ~~~
-   The copied `config.yaml` sets the releases and the BUSCO `lineage`. The databases go to `db/`. `db/versions.txt` lists each release and the date of the BUSCO lineage dataset. Cite these in a paper.
+   The copied `config.yaml` sets the releases and the BUSCO `lineage`. The databases go to `resources/db/`. `resources/db/versions.txt` lists each release and the date of the BUSCO lineage dataset. Cite these in a paper.
 
    Do not run `download_databases` in this folder a second time. Snakemake can replace files that other runs are reading.
 
-2. In the `config.yaml` of each run folder, set `db_dir` to the `db/` folder and name the lineage:
+2. In the `config.yaml` of each run folder, set `db_dir` to that `resources/db/` folder and name the lineage:
    ~~~
-   db_dir: "/path/to/databases/pfam38.2_rfam15.1_sprot2026_03/db"
+   db_dir: "/path/to/databases/pfam38.2_rfam15.1_sprot2026_03/resources/db"
    lineage: "viridiplantae_odb12"
    ~~~
    A run only reads this folder. BUSCO runs offline from `db_dir/busco_downloads`. If a database file is missing, or `lineage` is empty, Snakemake stops before any job starts and names the problem.
@@ -241,14 +300,14 @@ If you want to align reads to the transcriptome assembly and visualize the resul
 ./transXpress.sh IGV
 ~~~~
 
-Then you can load your transcriptome file to IGV: Genomes -> Load Genome from File -> select the file *transcriptome.fasta*
+Then you can load your transcriptome file to IGV: Genomes -> Load Genome from File -> select the file *results/assembly/transcriptome.fasta*
 
-Your sorted .bam files will be in the bowtie_alignments folder: 
+Your sorted .bam files will be in the igv folder:
 ~~~~
-bowtie_alignments/{sample}.sorted.bam
-bowtie_alignments/{sample}.sorted.bam.bai
+results/expression/bowtie2_rsem/igv/{sample}.sorted.bam
+results/expression/bowtie2_rsem/igv/{sample}.sorted.bam.bai
 ~~~~
-Load them to IGV: File -> Load from File -> select the *bowtie_alignments/{sample}.sorted.bam* files
+Load them to IGV: File -> Load from File -> select the *results/expression/bowtie2_rsem/igv/{sample}.sorted.bam* files
 
 ## The directed acyclic graph (DAG) of the transXpress pipeline execution
 
@@ -311,13 +370,14 @@ With the key set, each of the four rules makes its own folder under that variabl
 
 | Rule | Works on the local disk | Copied to the run folder |
 |---|---|---|
-| `rnaspades` | the whole `rnaspades_out` | `rnaspades_out`, which replaces the folder in the run folder |
-| `trinity_butterfly_parallel` | the files of each small assembly, through Trinity's `--workdir` | nothing: Trinity writes the fasta of each assembly to `trinity_out_dir/read_partitions` itself |
-| `kallisto`, `align_reads` | the indexes and the per replicate results | every file, over the files in the run folder |
+| `rnaspades` | the whole rnaSPAdes output folder | `results/assembly/rnaspades`, which replaces the folder in the run folder |
+| `trinity_butterfly_parallel` | the files of each small assembly, through Trinity's `--workdir` | nothing: Trinity writes the fasta of each assembly to `results/assembly/trinity/read_partitions` itself |
+| `kallisto` | the index and the per replicate results | every file, over the files in `results/expression/kallisto` |
+| `align_reads` | the indexes and the per replicate results | every file, over the files in `results/expression/bowtie2_rsem` |
 
 When the variable is not set in a job, for example on a computer without a cluster, the rule works in the run folder.
 
-When a rule fails, for example on an error of the tool or when the kernel stops it for lack of memory, it copies its local files to the place the rule writes them without the local disk, so they can be read to find the cause. A job that Slurm stops at its time limit or with `scancel` copies nothing: Slurm ends the Snakemake process of the job at once, and with it every process the job started. A node that crashes leaves nothing either. In all these cases the rule log in `logs/` holds the output of the tool up to the stop, and the Slurm log `logs/<rule>.log.slurm` names a time limit.
+When a rule fails, for example on an error of the tool or when the kernel stops it for lack of memory, it copies its local files to the place the rule writes them without the local disk, so they can be read to find the cause. A job that Slurm stops at its time limit or with `scancel` copies nothing: Slurm ends the Snakemake process of the job at once, and with it every process the job started. A node that crashes leaves nothing either. In all these cases the rule log `logs/<rule>.log` holds the output of the tool up to the stop, and the Slurm log `logs/<rule>.log.slurm` names a time limit.
 
 The local disk of a node is shared by the jobs on it, and a cluster may not reserve disk space for a job. `rnaspades` needed about 120 GB of working files for 9 libraries of about 23 million read pairs each.
 

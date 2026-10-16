@@ -75,6 +75,16 @@ if DB_SHARED:
 # These rules don't need to be sent to a cluster
 localrules: all, clean, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
+# A rule with a wildcard keeps its logs in logs/<rule>/, and the wildcard is only in the file name.
+# The cluster writes its own log next to the rule log before the job starts, and not every cluster
+# makes a missing folder, so every log folder is made here.
+onstart:
+  for workflow_rule in workflow.rules:
+    for log_file in workflow_rule.log:
+      log_folder = os.path.dirname(str(log_file))
+      if log_folder:
+        os.makedirs(log_folder, exist_ok=True)
+
 
 rule all:
   """
@@ -427,7 +437,7 @@ rule trimmomatic_parallel:
   output:
     "trimmomatic/completed_{job_index}"
   log:
-    "logs/trimmomatic_parallel{job_index}.log"
+    "logs/trimmomatic_parallel/{job_index}.log"
   conda:
     "envs/trimmomatic.yaml"
   params:
@@ -706,7 +716,7 @@ checkpoint trinity_butterfly_split:
   output:
     directory("trinity_out_dir/parallel_jobs")
   log:
-    "logs/trinity_split.log"
+    "logs/trinity_butterfly_split.log"
   params:
     cmds_per_chunk=config.get("trinity_butterfly_cmds_per_chunk", 20),
     max_chunks=config.get("trinity_butterfly_max_chunks", 1000)
@@ -737,7 +747,7 @@ rule trinity_butterfly_parallel:
     # skips a chunk whose job_ file has the same content and whose output sits in another folder.
     "trinity_out_dir/parallel_jobs/completed_{job_index}"
   log:
-    "logs/trinity_parallel{job_index}.log"
+    "logs/trinity_butterfly_parallel/{job_index}.log"
   conda:
     "envs/trinity_utils.yaml"
   params:
@@ -993,7 +1003,7 @@ rule trinity_stats:
     exN50="transcriptome_exN50.tsv",
     exN50plot="ExN50_plot.pdf"
   log:
-    "logs/trinity_exN50.log"
+    "logs/trinity_stats.log"
   conda:
     "envs/trinity_utils.yaml"
   params:
@@ -1216,7 +1226,7 @@ checkpoint align_reads:
   output:
     "transcriptome.fasta.bowtie2.ok"
   log:
-    "logs/bowtie2.log"
+    "logs/align_reads.log"
   conda:
     "envs/trinity_utils.yaml"
   params:
@@ -1311,7 +1321,7 @@ checkpoint prepare_samples_for_IGV:
     sorted_alignment="bowtie_alignments/{sample}.sorted.bam",
     indexed_alignment="bowtie_alignments/{sample}.sorted.bam.bai"
   log:
-    "logs/prepare_for_IGV_{sample}.log"
+    "logs/prepare_samples_for_IGV/{sample}.log"
   conda:
     "envs/trinity_utils.yaml"
   params:
@@ -1341,7 +1351,7 @@ rule IGV:
   output:
     "igv.ok"
   log:
-    "logs/IGV_combine.log"
+    "logs/IGV.log"
   shell:
     """
     touch {output}
@@ -1395,7 +1405,7 @@ checkpoint fasta_split_fasta:
   output:
     directory("annotations/chunks_fasta")
   log:
-    "logs/fasta_split.log"
+    "logs/fasta_split_fasta.log"
   params:
     memory="2"
   threads:
@@ -1431,7 +1441,7 @@ checkpoint fasta_split_orfs:
   output:
     directory("annotations/chunks_orfs")
   log:
-    "logs/orfs_split.log"
+    "logs/fasta_split_orfs.log"
   params:
     memory="2"
   threads:
@@ -1466,7 +1476,7 @@ checkpoint fasta_split_pep:
   output:
     directory("annotations/chunks_pep")
   log:
-    "logs/pep_split.log"
+    "logs/fasta_split_pep.log"
   params:
     memory="2"
   threads:
@@ -1534,7 +1544,7 @@ rule annotation_merge_fasta:
   output:
     "annotations/{task}_fasta.out"
   log:
-    "logs/{task}_fasta_merge.log"
+    "logs/annotation_merge_fasta/{task}.log"
   params:
     memory="2"
   threads:
@@ -1553,7 +1563,7 @@ rule annotation_merge_orfs:
   output:
     "annotations/{task}_orfs.out"
   log:
-    "logs/{task}_orfs_merge.log"
+    "logs/annotation_merge_orfs/{task}.log"
   params:
     memory="2"
   threads:
@@ -1573,7 +1583,7 @@ rule annotation_merge_pep:
   output:
     "annotations/{task}_pep.out"
   log:
-    "logs/{task}_pep_merge.log"
+    "logs/annotation_merge_pep/{task}.log"
   params:
     memory="2"
   threads:
@@ -1594,7 +1604,7 @@ rule rfam_parallel:
   output:
     "annotations/rfam/{index}.out"
   log:
-    "logs/rfam_{index}.log"
+    "logs/rfam_parallel/{index}.log"
   conda:
     "envs/rfam.yaml"
   params:
@@ -1617,7 +1627,7 @@ rule pfam_parallel:
   output:
     "annotations/pfam/{index}.out"
   log:
-    "logs/pfam_{index}.log"
+    "logs/pfam_parallel/{index}.log"
   conda:
     "envs/pfam.yaml"
   params:
@@ -1641,7 +1651,7 @@ rule sprot_blastp_parallel:
   output:
     "annotations/sprotblastp/{index}.out"
   log:
-    "logs/sprotblastp{index}.log"
+    "logs/sprot_blastp_parallel/{index}.log"
   conda:
     "envs/blast.yaml"
   params:
@@ -1664,7 +1674,7 @@ rule sprot_blastx_parallel:
   output:
     "annotations/sprotblastx/{index}.out"
   log:
-    "logs/sprotblastx_{index}.log"
+    "logs/sprot_blastx_parallel/{index}.log"
   conda:
     "envs/blast.yaml"
   params:
@@ -1687,7 +1697,7 @@ rule tmhmm_parallel:
   output:
     "annotations/tmhmm/{index}.out"
   log:
-    "logs/tmhmm_{index}.log"
+    "logs/tmhmm_parallel/{index}.log"
   params:
     memory="2"
   threads:
@@ -1761,7 +1771,7 @@ rule signalp_parallel:
   output:
     "annotations/signalp/{index}.out"
   log:
-    "logs/signalp_{index}.log"
+    "logs/signalp_parallel/{index}.log"
   conda:
     "signalp"
   params:
@@ -1786,7 +1796,7 @@ rule targetp_parallel:
   output:
     "annotations/targetp/{index}.out"
   log:
-    "logs/targetp_{index}.log"
+    "logs/targetp_parallel/{index}.log"
   conda:
     "targetp"
   params:

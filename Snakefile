@@ -91,8 +91,8 @@ rule all:
   List of target files of the transxpress pipeline.
   """
   input:
-    "samples_trimmed.txt",
-    "transcriptome.fasta",
+    "results/trimmomatic/samples_trimmed.txt",
+    "results/assembly/transcriptome.fasta",
     "transcriptome.pep",
     expand("transcriptome_all_orfs.{ext}", ext=["pep", "cds", "gff3", "bed"]),
     expand("transcriptome_single_best_orf.{ext}", ext=["pep", "cds", "gff3", "bed"]),
@@ -103,14 +103,14 @@ rule all:
     "transcriptome_TPM_blast.csv",
     "busco",
     "busco_report.txt",
-    "fastqc_before_trim",
-    "multiqc_before_trim",
-    "fastqc_after_trim",
-    "multiqc_after_trim",
-    "multiqc_before_trim.txt",
-    "multiqc_after_trim.txt",
-    "WARNING_fastqc_before_trim_overview.txt",
-    "FastQC_comparison_after_trim.txt",
+    "results/qc/fastqc_before_trim",
+    "results/qc/multiqc_before_trim",
+    "results/qc/fastqc_after_trim",
+    "results/qc/multiqc_after_trim",
+    "results/qc/multiqc_before_trim.txt",
+    "results/qc/multiqc_after_trim.txt",
+    "results/qc/WARNING_fastqc_before_trim_overview.txt",
+    "results/qc/FastQC_comparison_after_trim.txt",
     "edgeR_trans",
     "run_info.txt"
 
@@ -198,7 +198,7 @@ rule fastqc_before_trim:
   input:
     samples=config["samples_file"]
   output:
-    directory("fastqc_before_trim")
+    directory("results/qc/fastqc_before_trim")
   log:
     "logs/fastqc_before_trim.log"
   conda:
@@ -223,10 +223,10 @@ rule multiqc_before_trim:
   Creates multiQC report from individual fastQC reports.
   """
   input:
-    "fastqc_before_trim"
+    "results/qc/fastqc_before_trim"
   output:
-    out_dir=directory("multiqc_before_trim"),
-    report="multiqc_before_trim.txt"
+    out_dir=directory("results/qc/multiqc_before_trim"),
+    report="results/qc/multiqc_before_trim.txt"
   log:
     "logs/multiqc_before_trim.log"
   conda:
@@ -242,7 +242,7 @@ rule multiqc_before_trim:
     export LANG=C.UTF-8
     mkdir {output.out_dir} &> {log}
     multiqc -o {output.out_dir} {input} &>> {log}
-    cp multiqc_before_trim/multiqc_data/multiqc_fastqc.txt {output.report} &>> {log}
+    cp {output.out_dir}/multiqc_data/multiqc_fastqc.txt {output.report} &>> {log}
     """
 
 rule fastqc_before_trim_warnings:
@@ -250,9 +250,9 @@ rule fastqc_before_trim_warnings:
   Prints warnings for FastQC modules which produced some warnings or fails of the input data.
   """
   input:
-    fastqc_report="multiqc_before_trim.txt"
+    fastqc_report="results/qc/multiqc_before_trim.txt"
   output:
-    warning_file="WARNING_fastqc_before_trim_overview.txt"
+    warning_file="results/qc/WARNING_fastqc_before_trim_overview.txt"
   log:
     "logs/fastqc_before_trim_warnings.log"
   run:
@@ -408,7 +408,7 @@ Any library where a reasonable proportion of the insert sizes are shorter than t
     with open(output["warning_file"], "r") as out_file:
       for line in out_file.readlines():
         print(line.strip())
-      print('See this output in: WARNING_fastqc_before_trim_overview.txt')
+      print('See this output in: ' + output["warning_file"])
     
 checkpoint trimmomatic_split:
   """
@@ -418,7 +418,7 @@ checkpoint trimmomatic_split:
   input:
     samples=config["samples_file"]
   output:
-    directory("trimmomatic")
+    directory("results/trimmomatic/reads")
   log:
     "logs/trimmomatic_split.log"
   shell:
@@ -433,9 +433,9 @@ rule trimmomatic_parallel:
   Processes individual read files with trimmomatic.
   """
   input:
-    "trimmomatic/sample_{job_index}"
+    "results/trimmomatic/reads/sample_{job_index}"
   output:
-    "trimmomatic/completed_{job_index}"
+    "results/trimmomatic/reads/completed_{job_index}"
   log:
     "logs/trimmomatic_parallel/{job_index}.log"
   conda:
@@ -456,11 +456,11 @@ rule trimmomatic_parallel:
       exit 0
     fi
     if [ ! -z "$R_READS" ]; then
-      trimmomatic PE -threads {threads} $F_READS $R_READS trimmomatic/{wildcards[job_index]}.R1-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R1-U.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-P.qtrim.fastq.gz trimmomatic/{wildcards[job_index]}.R2-U.qtrim.fastq.gz {config[trimmomatic_parameters]} &>> {log}
-      echo $SAMPLE	$REPLICATE	trimmomatic/{wildcards[job_index]}.R1-P.qtrim.fastq.gz	trimmomatic/{wildcards[job_index]}.R2-P.qtrim.fastq.gz > {output} 2>> {log}
+      trimmomatic PE -threads {threads} $F_READS $R_READS results/trimmomatic/reads/{wildcards[job_index]}.R1-P.qtrim.fastq.gz results/trimmomatic/reads/{wildcards[job_index]}.R1-U.qtrim.fastq.gz results/trimmomatic/reads/{wildcards[job_index]}.R2-P.qtrim.fastq.gz results/trimmomatic/reads/{wildcards[job_index]}.R2-U.qtrim.fastq.gz {config[trimmomatic_parameters]} &>> {log}
+      echo $SAMPLE	$REPLICATE	results/trimmomatic/reads/{wildcards[job_index]}.R1-P.qtrim.fastq.gz	results/trimmomatic/reads/{wildcards[job_index]}.R2-P.qtrim.fastq.gz > {output} 2>> {log}
     else
-      trimmomatic SE -threads {threads} $F_READS trimmomatic/{wildcards[job_index]}.U.qtrim.fastq.gz {config[trimmomatic_parameters]} &>> {log}
-      echo $SAMPLE      $REPLICATE      trimmomatic/{wildcards[job_index]}.U.qtrim.fastq.gz > {output} 2>> {log}
+      trimmomatic SE -threads {threads} $F_READS results/trimmomatic/reads/{wildcards[job_index]}.U.qtrim.fastq.gz {config[trimmomatic_parameters]} &>> {log}
+      echo $SAMPLE      $REPLICATE      results/trimmomatic/reads/{wildcards[job_index]}.U.qtrim.fastq.gz > {output} 2>> {log}
     fi
     """
 
@@ -483,7 +483,7 @@ rule trimmomatic_merge:
   input:
     trimmomatic_completed_parallel_jobs
   output:
-    samples_trimmed="samples_trimmed.txt"
+    samples_trimmed="results/trimmomatic/samples_trimmed.txt"
   log:
     "logs/trimmomatic_merge.log"
   shell:
@@ -496,9 +496,9 @@ rule fastqc_after_trim:
   Runs fastQC on individual trimmed reads files.
   """
   input:
-    samples="samples_trimmed.txt"
+    samples="results/trimmomatic/samples_trimmed.txt"
   output:
-    directory("fastqc_after_trim")
+    directory("results/qc/fastqc_after_trim")
   log:
     "logs/fastqc_after_trim.log"
   conda:
@@ -523,10 +523,10 @@ rule multiqc_after_trim:
   Creates multiQC report from individual fastQC reports after the trimming.
   """
   input:
-    "fastqc_after_trim"
+    "results/qc/fastqc_after_trim"
   output:
-    out_directory=directory("multiqc_after_trim"),
-    report="multiqc_after_trim.txt"
+    out_directory=directory("results/qc/multiqc_after_trim"),
+    report="results/qc/multiqc_after_trim.txt"
   log:
     "logs/multiqc_after_trim.log"
   conda:
@@ -542,7 +542,7 @@ rule multiqc_after_trim:
     export LANG=C.UTF-8
     mkdir {output.out_directory} &> {log}
     multiqc -o {output.out_directory} {input} &>> {log}
-    cp multiqc_after_trim/multiqc_data/multiqc_fastqc.txt {output.report} &>> {log}
+    cp {output.out_directory}/multiqc_data/multiqc_fastqc.txt {output.report} &>> {log}
     """
 
 rule compare_qc_after_trim:
@@ -552,10 +552,10 @@ rule compare_qc_after_trim:
   OVERREPRESENTED SEQUENCES and ADAPTER CONTENT modules of FastQC.
   """
   input:
-    before="multiqc_before_trim.txt",
-    after="multiqc_after_trim.txt"
+    before="results/qc/multiqc_before_trim.txt",
+    after="results/qc/multiqc_after_trim.txt"
   output:
-    result="FastQC_comparison_after_trim.txt"
+    result="results/qc/FastQC_comparison_after_trim.txt"
   log:
     "logs/compare_qc_after_trim.log"
   run:
@@ -603,7 +603,7 @@ fail: {str(after_trim.count('fail'))} out of {str(len(after_trim))} ({str(after_
     with open(output["result"], "r") as out_file:
       for line in out_file.readlines():
         print(line.strip())
-      print('See this output in FastQC_comparison_after_trim.txt')
+      print('See this output in ' + output["result"])
 
 rule samples_yaml_conversion:
   """
@@ -611,9 +611,9 @@ rule samples_yaml_conversion:
   format used by rnaSPAdes.
   """
   input:
-    samples_txt="samples_trimmed.txt"
+    samples_txt="results/trimmomatic/samples_trimmed.txt"
   output:
-    samples_yaml="samples_trimmed.yaml"
+    samples_yaml="results/trimmomatic/samples_trimmed.yaml"
   log:
     "logs/samples_yaml_conversion.log"
   run:
@@ -664,9 +664,9 @@ rule trinity_inchworm_chrysalis:
   Runs first two stages of Trinity assembly (Inchworm and Chrysalis).
   """
   input:
-    samples="samples_trimmed.txt",
+    samples="results/trimmomatic/samples_trimmed.txt",
   output:
-    "trinity_out_dir/recursive_trinity.cmds"
+    "results/assembly/trinity/recursive_trinity.cmds"
   log:
     "logs/trinity_inchworm_chrysalis.log"
   conda:
@@ -683,26 +683,26 @@ rule trinity_inchworm_chrysalis:
     # record the computer this ran on, because the assembly depends on it
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
 
-    # Trinity ticks off the step that writes {output} with trinity_out_dir/recursive_trinity.cmds.ok and
+    # Trinity ticks off the step that writes {output} with results/assembly/trinity/recursive_trinity.cmds.ok and
     # does not check that the file that step wrote is still in place. trinity_final consumes the file and
     # leaves recursive_trinity.cmds.completed behind, so after a pass the tick is there and the file is
     # not. Trinity then skips the step, exits 0 and writes no output. So the tick goes first.
-    rm -f trinity_out_dir/recursive_trinity.cmds.ok &>> {log}
+    rm -f results/assembly/trinity/recursive_trinity.cmds.ok &>> {log}
 
     # trinity_final deletes read_partitions once the assembly is written, because it holds one folder per
     # read cluster and can reach millions of files. Trinity does not partition the reads again while
-    # trinity_out_dir/partitioned_reads.files.list.ok is in place, and it leaves the top folder of
+    # results/assembly/trinity/partitioned_reads.files.list.ok is in place, and it leaves the top folder of
     # read_partitions behind, so neither the folder nor its emptiness tells the two cases apart. Test the
     # list itself: if the first read file it names is gone, the partitions are gone with it and every
     # Butterfly chunk would stop on a missing input. A crashed run whose partitions are still in place
     # keeps its tick, so its hours of partitioning are not repeated.
-    PARTITION_LIST=trinity_out_dir/partitioned_reads.files.list
+    PARTITION_LIST=results/assembly/trinity/partitioned_reads.files.list
     if [ ! -s $PARTITION_LIST ] || [ ! -e "$(head -1 $PARTITION_LIST)" ]; then
       echo "read partitions are missing, so Trinity partitions the reads again" &>> {log}
       rm -f $PARTITION_LIST.ok &>> {log}
     fi
 
-    Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
+    Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --output results/assembly/trinity --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
     """
 
 
@@ -712,9 +712,9 @@ checkpoint trinity_butterfly_split:
   the commands into independent parts.
   """
   input:
-    "trinity_out_dir/recursive_trinity.cmds"
+    "results/assembly/trinity/recursive_trinity.cmds"
   output:
-    directory("trinity_out_dir/parallel_jobs")
+    directory("results/assembly/trinity/parallel_jobs")
   log:
     "logs/trinity_butterfly_split.log"
   params:
@@ -740,12 +740,12 @@ rule trinity_butterfly_parallel:
   Runs Trinity Butterfly commands (which were split into parts) in parallel.
   """
   input:
-    "trinity_out_dir/parallel_jobs/job_{job_index}"
+    "results/assembly/trinity/parallel_jobs/job_{job_index}"
   output:
     # Keep this inside parallel_jobs. Each split deletes the folder, so every chunk runs again. After
     # trinity_inchworm_chrysalis runs again, the job_ files can hold the same commands, and Snakemake
     # skips a chunk whose job_ file has the same content and whose output sits in another folder.
-    "trinity_out_dir/parallel_jobs/completed_{job_index}"
+    "results/assembly/trinity/parallel_jobs/completed_{job_index}"
   log:
     "logs/trinity_butterfly_parallel/{job_index}.log"
   conda:
@@ -777,8 +777,8 @@ rule trinity_butterfly_parallel:
         set +e
         trap - EXIT TERM
         if [ $rc -ne 0 ] && [ -d "$WORK/trinity_work" ]; then
-          echo "the chunk stopped with code $rc, so $WORK/trinity_work goes to trinity_out_dir/read_partitions" &>> {log}
-          cp -rp "$WORK/trinity_work/." trinity_out_dir/read_partitions/ &>> {log}
+          echo "the chunk stopped with code $rc, so $WORK/trinity_work goes to results/assembly/trinity/read_partitions" &>> {log}
+          cp -rp "$WORK/trinity_work/." results/assembly/trinity/read_partitions/ &>> {log}
         fi
         rm -rf "$WORK"
         exit $rc
@@ -807,9 +807,9 @@ def trinity_completed_parallel_jobs(wildcards):
 rule trinity_butterfly_parallel_merge:
   input:
     jobs=trinity_completed_parallel_jobs,
-    cmds="trinity_out_dir/recursive_trinity.cmds"
+    cmds="results/assembly/trinity/recursive_trinity.cmds"
   output:
-    cmds_completed="trinity_out_dir/recursive_trinity.cmds.completed"
+    cmds_completed="results/assembly/trinity/recursive_trinity.cmds.completed"
   log:
     "logs/trinity_butterfly_parallel_merge.log"
   params:
@@ -824,7 +824,7 @@ rule trinity_butterfly_parallel_merge:
     # xargs passes the files to cat in calls that fit the limit, so the chunk count has no limit here.
     # The list comes from the job_ files, as the rule input does, so a stray completed_ file is not read
     # and a missing one stops cat. The chunk suffixes have a fixed width, so sort gives the order of the split.
-    {{ find trinity_out_dir/parallel_jobs -maxdepth 1 -name 'job_*' | LC_ALL=C sort | sed 's|/job_|/completed_|' | xargs -r cat ; }} > {output.cmds_completed} 2> {log}
+    {{ find results/assembly/trinity/parallel_jobs -maxdepth 1 -name 'job_*' | LC_ALL=C sort | sed 's|/job_|/completed_|' | xargs -r cat ; }} > {output.cmds_completed} 2> {log}
     """
 
 
@@ -833,11 +833,12 @@ rule trinity_final:
   Runs the final Trinity assembly.
   """
   input:
-    cmds_completed="trinity_out_dir/recursive_trinity.cmds.completed",
-    samples="samples_trimmed.txt"
+    cmds_completed="results/assembly/trinity/recursive_trinity.cmds.completed",
+    samples="results/trimmomatic/samples_trimmed.txt"
   output:
-    transcriptome="trinity_out_dir.Trinity.fasta", #new output files live in base directory now, not trinity_out_dir.
-    gene_trans_map="trinity_out_dir.Trinity.fasta.gene_trans_map" #according to trinity dev, this is a feature, not a bug
+    # Trinity writes these two beside its output folder, not inside it
+    transcriptome="results/assembly/trinity.Trinity.fasta",
+    gene_trans_map="results/assembly/trinity.Trinity.fasta.gene_trans_map"
   log:
     "logs/trinity_final.log"
   conda:
@@ -855,33 +856,33 @@ rule trinity_final:
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
     # read_partitions is deleted after a successful assembly (see below), and Trinity needs it to collect the transcripts
     # Trinity does not partition the reads again while its own checkpoint files exist, so they must be removed first
-    if [ ! -d trinity_out_dir/read_partitions ]; then
-      echo "ERROR: trinity_out_dir/read_partitions is missing. It was deleted after an earlier assembly." | tee -a {log} >&2
-      echo "To assemble again: rm -f trinity_out_dir/partitioned_reads.files.list.ok trinity_out_dir/recursive_trinity.cmds.ok" | tee -a {log} >&2
+    if [ ! -d results/assembly/trinity/read_partitions ]; then
+      echo "ERROR: results/assembly/trinity/read_partitions is missing. It was deleted after an earlier assembly." | tee -a {log} >&2
+      echo "To assemble again: rm -f results/assembly/trinity/partitioned_reads.files.list.ok results/assembly/trinity/recursive_trinity.cmds.ok" | tee -a {log} >&2
       echo "then run snakemake again with: --forcerun trinity_inchworm_chrysalis" | tee -a {log} >&2
       exit 1
     fi
 
-    # Trinity ticks off its last step with trinity_out_dir/__salmon_filt.chkpts/salmon.filt.ok and does not
+    # Trinity ticks off its last step with results/assembly/trinity/__salmon_filt.chkpts/salmon.filt.ok and does not
     # check that the file that step wrote is still in place. With the tick of an earlier assembly present,
     # Trinity skips the one command that writes {output.transcriptome}, prints "Trinity.fasta 0 MByte" and
     # exits 0 with no assembly. So the ticks and the half-finished output of an earlier assembly go first.
-    rm -rf trinity_out_dir/__salmon_filt.chkpts trinity_out_dir/Trinity.tmp.fasta &>> {log}
+    rm -rf results/assembly/trinity/__salmon_filt.chkpts results/assembly/trinity/Trinity.tmp.fasta &>> {log}
 
-    Trinity --max_memory {params.memory}G --CPU {threads} --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
+    Trinity --max_memory {params.memory}G --CPU {threads} --output results/assembly/trinity --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
 
     # read_partitions holds one folder per read cluster (can be millions of files) and is not needed after the assembly
     # Delete it only once the assembly is in place. Trinity can exit 0 without writing it, and read_partitions
     # is the only input the assembly can be repeated from, so deleting it on a failed run loses the run.
     if [ -s {output.transcriptome} ] && [ -s {output.gene_trans_map} ]; then
       # rename first, so that a half-deleted folder is never left under its real name
-      rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
-      mv trinity_out_dir/read_partitions trinity_out_dir/read_partitions.deleting &>> {log}
-      rm -rf trinity_out_dir/read_partitions.deleting &>> {log}
+      rm -rf results/assembly/trinity/read_partitions.deleting &>> {log}
+      mv results/assembly/trinity/read_partitions results/assembly/trinity/read_partitions.deleting &>> {log}
+      rm -rf results/assembly/trinity/read_partitions.deleting &>> {log}
     else
       # fail here, so the log names the cause and Snakemake does not report only a missing output file
       echo "ERROR: Trinity exited 0 but did not write {output.transcriptome} and {output.gene_trans_map}." | tee -a {log} >&2
-      echo "trinity_out_dir/read_partitions is kept, so the assembly can run again. See {log}" | tee -a {log} >&2
+      echo "results/assembly/trinity/read_partitions is kept, so the assembly can run again. See {log}" | tee -a {log} >&2
       exit 1
     fi
     """
@@ -893,11 +894,11 @@ rule rnaspades:
   rnaspades_filter in config.yaml picks the one that becomes transcriptome.fasta.
   """
   input:
-    samples="samples_trimmed.yaml",
+    samples="results/trimmomatic/samples_trimmed.yaml",
   output:
-    default="rnaspades_out/transcripts.fasta",
-    hard="rnaspades_out/hard_filtered_transcripts.fasta",
-    soft="rnaspades_out/soft_filtered_transcripts.fasta"
+    default="results/assembly/rnaspades/transcripts.fasta",
+    hard="results/assembly/rnaspades/hard_filtered_transcripts.fasta",
+    soft="results/assembly/rnaspades/soft_filtered_transcripts.fasta"
     ##config["annotated_fasta_prefix"]+"_spades_out/K"+THEKMER+"/assembly_graph_with_scaffolds.gfa"
   log:
     "logs/rnaspades.log"
@@ -917,16 +918,19 @@ rule rnaspades:
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
 
     # rnaSPAdes writes about 100 GB of working files on a large dataset. When the scratch key names a
-    # variable that is set in this job, it works in a folder on the node's local disk, and rnaspades_out
-    # is copied to the run folder at the end. Otherwise it works in the run folder.
+    # variable that is set in this job, it works in a folder on the node's local disk, and its output
+    # folder is copied to the run folder at the end. Otherwise it works in the run folder.
+    OUT=results/assembly/rnaspades
+    SPADES_OUT=$OUT
     SCRATCH_VAR="{params.scratch_var}"
     LOCAL_ROOT=""
     if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
     if [ -n "$LOCAL_ROOT" ]; then
       RUN=$(pwd)
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
+      SPADES_OUT=$WORK/rnaspades
       echo "work folder: $WORK" &>> {log}
-      # On a failure, the local folder goes to rnaspades_out, where it would stand without the local disk.
+      # On a failure, the local folder goes to $OUT, where it would stand without the local disk.
       # A job that Slurm kills at its time limit or with scancel copies nothing. The local folder is deleted
       # in all cases.
       on_exit() {{
@@ -934,28 +938,27 @@ rule rnaspades:
         set +e
         trap - EXIT TERM
         if [ $rc -ne 0 ]; then
-          echo "rnaspades stopped with code $rc, so $WORK/rnaspades_out goes to rnaspades_out" &>> {log}
-          cp -rp "$WORK/rnaspades_out/." rnaspades_out/ &>> {log}
+          echo "rnaspades stopped with code $rc, so $WORK/rnaspades goes to $OUT" &>> {log}
+          mkdir -p "$OUT" &>> {log}
+          cp -rp "$WORK/rnaspades/." "$OUT/" &>> {log}
         fi
         rm -rf "$WORK"
         exit $rc
       }}
       trap on_exit EXIT
       trap "exit 143" TERM
-    else
-      WORK=.
     fi
 
     # No --checkpoints: Slurm deletes the local folder when the job ends, so a restart point would not survive
-    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o "$WORK/rnaspades_out" {config[strand_specific]} --only-assembler {config[kmers]} &>> {log}
+    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o "$SPADES_OUT" {config[strand_specific]} --only-assembler {config[kmers]} &>> {log}
 
-    if [ "$WORK" != . ]; then
+    if [ "$SPADES_OUT" != "$OUT" ]; then
       SIZE=$(du -sh "$WORK" | cut -f1)
       START=$(date +%s)
       # replace the whole folder, so no file of an earlier failed run stays beside the new assembly
-      rm -rf rnaspades_out &>> {log}
-      cp -rp "$WORK/rnaspades_out" . &>> {log}
-      echo "copied $SIZE from $WORK to rnaspades_out in $(( $(date +%s) - START )) s" &>> {log}
+      rm -rf "$OUT" &>> {log}
+      cp -rp "$SPADES_OUT" "$(dirname "$OUT")/" &>> {log}
+      echo "copied $SIZE from $WORK to $OUT in $(( $(date +%s) - START )) s" &>> {log}
     fi
     """
  
@@ -978,8 +981,8 @@ rule transcriptome_copy:
   input:
     unpack(transcriptome_copy_input)
   output:
-    transcriptome="transcriptome.fasta",
-    gene_trans_map="transcriptome.gene_trans_map"
+    transcriptome="results/assembly/transcriptome.fasta",
+    gene_trans_map="results/assembly/transcriptome.gene_trans_map"
   log:
     "logs/transcriptome_copy.log"
   run:
@@ -996,7 +999,7 @@ rule trinity_stats:
   (number of transcripts, genes, GC content, EXN50).
   """
   input:
-    transcriptome="transcriptome.fasta",
+    transcriptome="results/assembly/transcriptome.fasta",
     expression="transcriptome_expression_isoform.tsv"
   output:
     stats="transcriptome_stats.txt",
@@ -1032,7 +1035,7 @@ rule busco:
   Runs BUSCO to assess the completeness of the transcriptome.
   """
   input:
-    transcriptome="transcriptome.fasta"
+    transcriptome="results/assembly/transcriptome.fasta"
   output:
     out_directory=directory("busco"),
     report="busco_report.txt"
@@ -1076,7 +1079,7 @@ rule transdecoder_longorfs:
   Runs first stage of Transdecoder extracting the long open reading frames.
   """
   input:
-    transcriptome="transcriptome.fasta",
+    transcriptome="results/assembly/transcriptome.fasta",
   output:
     orfs="transcriptome.orfs"
   log:
@@ -1117,7 +1120,7 @@ rule transdecoder_predict_all:
   among tied ORFs in each run.
   """
   input:
-    transcriptome="transcriptome.fasta",
+    transcriptome="results/assembly/transcriptome.fasta",
     orfs="transcriptome.orfs",
     pfam="annotations/pfam_orfs.out",
     blastp="annotations/sprotblastp_orfs.out"
@@ -1160,7 +1163,7 @@ rule transdecoder_predict_single_best:
   hit first and by length second.
   """
   input:
-    transcriptome="transcriptome.fasta",
+    transcriptome="results/assembly/transcriptome.fasta",
     orfs="transcriptome.orfs",
     pfam="annotations/pfam_orfs.out",
     blastp="annotations/sprotblastp_orfs.out"
@@ -1220,9 +1223,9 @@ checkpoint align_reads:
   and estimating the abundance with RSEM.
   """
   input:
-    samples="samples_trimmed.txt",
-    transcriptome="transcriptome.fasta",
-    gene_trans_map="transcriptome.gene_trans_map"
+    samples="results/trimmomatic/samples_trimmed.txt",
+    transcriptome="results/assembly/transcriptome.fasta",
+    gene_trans_map="results/assembly/transcriptome.gene_trans_map"
   output:
     "transcriptome.fasta.bowtie2.ok"
   log:
@@ -1401,7 +1404,7 @@ checkpoint fasta_split_fasta:
   they can be processed (annotated) in parallel.
   """
   input:
-    "transcriptome.fasta"
+    "results/assembly/transcriptome.fasta"
   output:
     directory("annotations/chunks_fasta")
   log:
@@ -1816,9 +1819,9 @@ rule kallisto:
   using Kallisto.
   """
   input:
-    samples="samples_trimmed.txt",
-    transcriptome="transcriptome.fasta",
-    gene_trans_map="transcriptome.gene_trans_map"
+    samples="results/trimmomatic/samples_trimmed.txt",
+    transcriptome="results/assembly/transcriptome.fasta",
+    gene_trans_map="results/assembly/transcriptome.gene_trans_map"
   output:
     "transcriptome_expression_isoform.tsv",
     "transcriptome_expression_gene.tsv",
@@ -2124,7 +2127,7 @@ rule annotated_fasta:
   .fasta/.pep transcriptome files.
   """
   input:
-    transcriptome="transcriptome.fasta",
+    transcriptome="results/assembly/transcriptome.fasta",
     proteome="transcriptome.pep",
     expression="transcriptome_expression_isoform.tsv",
     blastx_results="annotations/sprotblastx_fasta.out",

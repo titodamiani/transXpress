@@ -53,7 +53,7 @@ strand_specific: ""
 # Only for rnaSPAdes assembler:
 # rnaSPAdes writes three transcript sets. Each one removes transcripts that are short or have low
 # read coverage, with stricter cutoffs from soft to hard. This key picks the set that becomes
-# transcriptome.fasta. The other two stay in rnaspades_out/.
+# transcriptome.fasta. The other two stay in results/assembly/rnaspades/.
 # "default": transcripts.fasta, the set the SPAdes manual recommends without a specific need.
 # "hard": hard_filtered_transcripts.fasta, only long transcripts with rather high expression.
 # "soft": soft_filtered_transcripts.fasta, also short, low expressed transcripts, likely to hold junk.

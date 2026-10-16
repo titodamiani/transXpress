@@ -642,6 +642,9 @@ rule samples_yaml_conversion:
     import os.path
     import pprint
 
+    # rnaSPAdes reads a relative path in this file from the folder of the file, so each read path is
+    # written relative to that folder
+    yaml_dir = os.path.dirname(output["samples_yaml"])
     sample_list = []
     with open(input["samples_txt"], "r") as input_handle:
       for line in input_handle:
@@ -654,8 +657,8 @@ rule samples_yaml_conversion:
           r_reads = row[3].strip()
           assert os.path.isfile(f_reads)
           assert os.path.isfile(r_reads)
-          paired_dict['left reads'] = [f_reads]
-          paired_dict['right reads'] = [r_reads]
+          paired_dict['left reads'] = [os.path.relpath(f_reads, yaml_dir)]
+          paired_dict['right reads'] = [os.path.relpath(r_reads, yaml_dir)]
           ##Depends on where the unpaired reads are written to
           ##Presumably could get from sample txt as well
           ##Note: Commented out, to make it consistent with Trinity. May change in future
@@ -673,7 +676,7 @@ rule samples_yaml_conversion:
           unpaired_dict['type'] = 'single'
           u_reads = row[2].strip()
           assert os.path.isfile(u_reads)
-          unpaired_dict['single reads'] = [u_reads]
+          unpaired_dict['single reads'] = [os.path.relpath(u_reads, yaml_dir)]
           sample_list.append(unpaired_dict)
 
     with open(output["samples_yaml"], "w") as output_handle:

@@ -25,7 +25,7 @@ if not re.fullmatch(r"\d{4}_\d{2}", SPROT_RELEASE):
 TRANSDECODER_ORFS = str(config.get("transdecoder_orfs", "all"))
 if TRANSDECODER_ORFS not in ["all", "single_best"]:
   raise ValueError("transdecoder_orfs must be \"all\" or \"single_best\". The config gives %s" % TRANSDECODER_ORFS)
-TRANSDECODER_ORFS_FILE = {"all": "transcriptome_all_orfs.pep", "single_best": "transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
+TRANSDECODER_ORFS_FILE = {"all": "results/transdecoder/transcriptome_all_orfs.pep", "single_best": "results/transdecoder/transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
 
 # The rnaSPAdes transcript set that becomes transcriptome.fasta. rnaSPAdes always writes all three.
 RNASPADES_FILTER = str(config.get("rnaspades_filter", "default"))
@@ -93,16 +93,16 @@ rule all:
   input:
     "results/trimmomatic/samples_trimmed.txt",
     "results/assembly/transcriptome.fasta",
-    "transcriptome.pep",
-    expand("transcriptome_all_orfs.{ext}", ext=["pep", "cds", "gff3", "bed"]),
-    expand("transcriptome_single_best_orf.{ext}", ext=["pep", "cds", "gff3", "bed"]),
-    "transcriptome_stats.txt",
-    "ExN50_plot.pdf",
-    "transcriptome_annotated.fasta",
-    "transcriptome_annotated.pep",
-    "transcriptome_TPM_blast.csv",
-    "busco",
-    "busco_report.txt",
+    "results/transdecoder/transcriptome.pep",
+    expand("results/transdecoder/transcriptome_all_orfs.{ext}", ext=["pep", "cds", "gff3", "bed"]),
+    expand("results/transdecoder/transcriptome_single_best_orf.{ext}", ext=["pep", "cds", "gff3", "bed"]),
+    "results/qc/transcriptome_stats.txt",
+    "results/qc/ExN50_plot.pdf",
+    "results/annotation/transcriptome_annotated.fasta",
+    "results/annotation/transcriptome_annotated.pep",
+    "results/annotation/transcriptome_TPM_blast.csv",
+    "results/qc/busco",
+    "results/qc/busco_report.txt",
     "results/qc/fastqc_before_trim",
     "results/qc/multiqc_before_trim",
     "results/qc/fastqc_after_trim",
@@ -1000,11 +1000,11 @@ rule trinity_stats:
   """
   input:
     transcriptome="results/assembly/transcriptome.fasta",
-    expression="transcriptome_expression_isoform.tsv"
+    expression="results/expression/transcriptome_expression_isoform.tsv"
   output:
-    stats="transcriptome_stats.txt",
-    exN50="transcriptome_exN50.tsv",
-    exN50plot="ExN50_plot.pdf"
+    stats="results/qc/transcriptome_stats.txt",
+    exN50="results/qc/transcriptome_exN50.tsv",
+    exN50plot="results/qc/ExN50_plot.pdf"
   log:
     "logs/trinity_stats.log"
   conda:
@@ -1026,8 +1026,12 @@ rule trinity_stats:
     else
         $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} | sed -e 's/trinity/rnaspades/g' > {output.stats} 2> {log}
     fi
-    $TRINITY_HOME/util/misc/contig_ExN50_statistic.pl {input.expression} {input.transcriptome} > {output.exN50} 2>> {log}
-    $TRINITY_HOME/util/misc/plot_ExN50_statistic.Rscript {output.exN50} &>> {log}
+    # contig_ExN50_statistic.pl writes its .E-inputs table and the R script writes ExN50_plot.pdf into the
+    # folder they run in, so both run in the folder of the outputs
+    RUN=$(pwd)
+    cd $(dirname {output.exN50})
+    $TRINITY_HOME/util/misc/contig_ExN50_statistic.pl "$RUN/{input.expression}" "$RUN/{input.transcriptome}" > $(basename {output.exN50}) 2>> "$RUN/{log}"
+    $TRINITY_HOME/util/misc/plot_ExN50_statistic.Rscript $(basename {output.exN50}) &>> "$RUN/{log}"
     """
 
 rule busco:
@@ -1037,8 +1041,8 @@ rule busco:
   input:
     transcriptome="results/assembly/transcriptome.fasta"
   output:
-    out_directory=directory("busco"),
-    report="busco_report.txt"
+    out_directory=directory("results/qc/busco"),
+    report="results/qc/busco_report.txt"
   log:
     "logs/busco.log"
   conda:
@@ -1059,7 +1063,8 @@ rule busco:
       lineage_option="-l {params.lineage}"
     fi
 
-    busco -m transcriptome -i {input.transcriptome} -o {output.out_directory} $lineage_option -c {threads} {params.download_option} &> {log}
+    # -o takes a folder name and --out_path the folder that holds it
+    busco -m transcriptome -i {input.transcriptome} -o $(basename {output.out_directory}) --out_path $(dirname {output.out_directory}) $lineage_option -c {threads} {params.download_option} &> {log}
     echo "BUSCO run completed successfully" &>> {log}
 
     # with --auto-lineage BUSCO also writes a short_summary.generic.* file, the report is the specific one
@@ -1081,7 +1086,7 @@ rule transdecoder_longorfs:
   input:
     transcriptome="results/assembly/transcriptome.fasta",
   output:
-    orfs="transcriptome.orfs"
+    orfs="results/transdecoder/transcriptome.orfs"
   log:
     "logs/transdecoder_longorfs.log"
   conda:
@@ -1092,14 +1097,16 @@ rule transdecoder_longorfs:
     1
   shell:
     """
+    # LongOrfs names its folder after the file name of the transcriptome
+    TD_DIR=results/transdecoder/longorfs/$(basename {input.transcriptome}).transdecoder_dir
     # LongOrfs skips a step when its checkpoint file exists, so a rerun starts from an empty folder
-    rm -rf transdecoder/{input.transcriptome}.transdecoder_dir &> {log}
+    rm -rf $TD_DIR &> {log}
     # A fixed Perl hash seed gives the same output order in each run
     export PERL_HASH_SEED=0
     # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
     TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
-    $TD_UTIL/TransDecoder.LongOrfs -t {input.transcriptome} --output_dir transdecoder &>> {log} 
-    cp -p transdecoder/{input.transcriptome}.transdecoder_dir/longest_orfs.pep {output.orfs} &>> {log}
+    $TD_UTIL/TransDecoder.LongOrfs -t {input.transcriptome} --output_dir results/transdecoder/longorfs &>> {log}
+    cp -p $TD_DIR/longest_orfs.pep {output.orfs} &>> {log}
     """
 
 
@@ -1121,37 +1128,39 @@ rule transdecoder_predict_all:
   """
   input:
     transcriptome="results/assembly/transcriptome.fasta",
-    orfs="transcriptome.orfs",
-    pfam="annotations/pfam_orfs.out",
-    blastp="annotations/sprotblastp_orfs.out"
+    orfs="results/transdecoder/transcriptome.orfs",
+    pfam="results/annotation/pfam_orfs.out",
+    blastp="results/annotation/sprotblastp_orfs.out"
   output:
-    pep="transcriptome_all_orfs.pep",
-    cds="transcriptome_all_orfs.cds",
-    gff3="transcriptome_all_orfs.gff3",
-    bed="transcriptome_all_orfs.bed"
+    pep="results/transdecoder/transcriptome_all_orfs.pep",
+    cds="results/transdecoder/transcriptome_all_orfs.cds",
+    gff3="results/transdecoder/transcriptome_all_orfs.gff3",
+    bed="results/transdecoder/transcriptome_all_orfs.bed"
   log:
     "logs/transdecoder_predict_all.log"
   conda:
     "envs/transdecoder.yaml"
   params:
     memory=config.get("transdecoder_predict_memory", "6"),
-    workdir="transdecoder_all"
+    workdir="results/transdecoder/predict_all"
   threads:
     config.get("transdecoder_predict_threads", 1)
   shell:
     """
     rm -rf {params.workdir} &> {log}
     mkdir -p {params.workdir} &>> {log}
-    cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
-    rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
+    # Predict and LongOrfs name their files after the file name of the transcriptome
+    NAME=$(basename {input.transcriptome})
+    cp -rp results/transdecoder/longorfs/$NAME.transdecoder_dir {params.workdir}/ &>> {log}
+    rm -rf {params.workdir}/$NAME.transdecoder_dir/__checkpoints_TDpredict &>> {log}
     export PERL_HASH_SEED=0
     # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
     TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
     $TD_UTIL/TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output.pep} &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.cds {output.cds} &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.gff3 {output.gff3} &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.bed {output.bed} &>> {log}
+    cp -p {params.workdir}/$NAME.transdecoder.pep {output.pep} &>> {log}
+    cp -p {params.workdir}/$NAME.transdecoder.cds {output.cds} &>> {log}
+    cp -p {params.workdir}/$NAME.transdecoder.gff3 {output.gff3} &>> {log}
+    cp -p {params.workdir}/$NAME.transdecoder.bed {output.bed} &>> {log}
     rm -rf {params.workdir} &>> {log}
     """
 
@@ -1164,37 +1173,39 @@ rule transdecoder_predict_single_best:
   """
   input:
     transcriptome="results/assembly/transcriptome.fasta",
-    orfs="transcriptome.orfs",
-    pfam="annotations/pfam_orfs.out",
-    blastp="annotations/sprotblastp_orfs.out"
+    orfs="results/transdecoder/transcriptome.orfs",
+    pfam="results/annotation/pfam_orfs.out",
+    blastp="results/annotation/sprotblastp_orfs.out"
   output:
-    pep="transcriptome_single_best_orf.pep",
-    cds="transcriptome_single_best_orf.cds",
-    gff3="transcriptome_single_best_orf.gff3",
-    bed="transcriptome_single_best_orf.bed"
+    pep="results/transdecoder/transcriptome_single_best_orf.pep",
+    cds="results/transdecoder/transcriptome_single_best_orf.cds",
+    gff3="results/transdecoder/transcriptome_single_best_orf.gff3",
+    bed="results/transdecoder/transcriptome_single_best_orf.bed"
   log:
     "logs/transdecoder_predict_single_best.log"
   conda:
     "envs/transdecoder.yaml"
   params:
     memory=config.get("transdecoder_predict_memory", "6"),
-    workdir="transdecoder_single_best"
+    workdir="results/transdecoder/predict_single_best"
   threads:
     config.get("transdecoder_predict_threads", 1)
   shell:
     """
     rm -rf {params.workdir} &> {log}
     mkdir -p {params.workdir} &>> {log}
-    cp -rp transdecoder/{input.transcriptome}.transdecoder_dir {params.workdir}/ &>> {log}
-    rm -rf {params.workdir}/{input.transcriptome}.transdecoder_dir/__checkpoints_TDpredict &>> {log}
+    # Predict and LongOrfs name their files after the file name of the transcriptome
+    NAME=$(basename {input.transcriptome})
+    cp -rp results/transdecoder/longorfs/$NAME.transdecoder_dir {params.workdir}/ &>> {log}
+    rm -rf {params.workdir}/$NAME.transdecoder_dir/__checkpoints_TDpredict &>> {log}
     export PERL_HASH_SEED=0
     # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
     TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
     $TD_UTIL/TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} --single_best_only &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.pep {output.pep} &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.cds {output.cds} &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.gff3 {output.gff3} &>> {log}
-    cp -p {params.workdir}/{input.transcriptome}.transdecoder.bed {output.bed} &>> {log}
+    cp -p {params.workdir}/$NAME.transdecoder.pep {output.pep} &>> {log}
+    cp -p {params.workdir}/$NAME.transdecoder.cds {output.cds} &>> {log}
+    cp -p {params.workdir}/$NAME.transdecoder.gff3 {output.gff3} &>> {log}
+    cp -p {params.workdir}/$NAME.transdecoder.bed {output.bed} &>> {log}
     rm -rf {params.workdir} &>> {log}
     """
 
@@ -1207,7 +1218,7 @@ rule transdecoder_select:
   input:
     TRANSDECODER_ORFS_FILE
   output:
-    "transcriptome.pep"
+    "results/transdecoder/transcriptome.pep"
   log:
     "logs/transdecoder_select.log"
   shell:
@@ -1406,7 +1417,7 @@ checkpoint fasta_split_fasta:
   input:
     "results/assembly/transcriptome.fasta"
   output:
-    directory("annotations/chunks_fasta")
+    directory("results/annotation/chunks/fasta")
   log:
     "logs/fasta_split_fasta.log"
   params:
@@ -1440,9 +1451,9 @@ checkpoint fasta_split_orfs:
   they can be processed (annotated) in parallel.
   """
   input:
-    "transcriptome.orfs"
+    "results/transdecoder/transcriptome.orfs"
   output:
-    directory("annotations/chunks_orfs")
+    directory("results/annotation/chunks/orfs")
   log:
     "logs/fasta_split_orfs.log"
   params:
@@ -1475,9 +1486,9 @@ checkpoint fasta_split_pep:
   they can be processed (annotated) in parallel.
   """
   input:
-    "transcriptome.pep"
+    "results/transdecoder/transcriptome.pep"
   output:
-    directory("annotations/chunks_pep")
+    directory("results/annotation/chunks/pep")
   log:
     "logs/fasta_split_pep.log"
   params:
@@ -1514,7 +1525,7 @@ def parallel_annotation_tasks_fasta(wildcards):
   parallel_dir = checkpoints.fasta_split_fasta.get(**wildcards).output[0]
   # sorted, because glob_wildcards returns the folder order, which differs between runs
   job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.fasta" )).index)
-  completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
+  completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
 def parallel_annotation_tasks_orfs(wildcards):
@@ -1524,7 +1535,7 @@ def parallel_annotation_tasks_orfs(wildcards):
   parallel_dir = checkpoints.fasta_split_orfs.get(**wildcards).output[0]
   # sorted, because glob_wildcards returns the folder order, which differs between runs
   job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index)
-  completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
+  completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
 def parallel_annotation_tasks_pep(wildcards):
@@ -1534,7 +1545,7 @@ def parallel_annotation_tasks_pep(wildcards):
   parallel_dir = checkpoints.fasta_split_pep.get(**wildcards).output[0]
   # sorted, because glob_wildcards returns the folder order, which differs between runs
   job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index)
-  completed_files = expand("annotations/{task}/{index}.out",index=job_ids, task=wildcards["task"])
+  completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
 
@@ -1545,7 +1556,7 @@ rule annotation_merge_fasta:
   input:
     parallel_annotation_tasks_fasta
   output:
-    "annotations/{task}_fasta.out"
+    "results/annotation/{task}_fasta.out"
   log:
     "logs/annotation_merge_fasta/{task}.log"
   params:
@@ -1564,7 +1575,7 @@ rule annotation_merge_orfs:
   input:
     parallel_annotation_tasks_orfs
   output:
-    "annotations/{task}_orfs.out"
+    "results/annotation/{task}_orfs.out"
   log:
     "logs/annotation_merge_orfs/{task}.log"
   params:
@@ -1584,7 +1595,7 @@ rule annotation_merge_pep:
   input:
     parallel_annotation_tasks_pep
   output:
-    "annotations/{task}_pep.out"
+    "results/annotation/{task}_pep.out"
   log:
     "logs/annotation_merge_pep/{task}.log"
   params:
@@ -1602,10 +1613,10 @@ rule rfam_parallel:
   Runs cmscan on Rfam database on smaller nucleotide files in parallel.
   """
   input:
-    fasta="annotations/chunks_fasta/{index}.fasta",
+    fasta="results/annotation/chunks/fasta/{index}.fasta",
     db=DB_DIR + "/Rfam.cm"
   output:
-    "annotations/rfam/{index}.out"
+    "results/annotation/chunks/rfam/{index}.out"
   log:
     "logs/rfam_parallel/{index}.log"
   conda:
@@ -1625,10 +1636,10 @@ rule pfam_parallel:
   Runs hmmscan on Pfam database on smaller protein files in parallel.
   """
   input:
-    fasta="annotations/chunks_orfs/{index}.orfs",
+    fasta="results/annotation/chunks/orfs/{index}.orfs",
     db=DB_DIR + "/Pfam-A.hmm"
   output:
-    "annotations/pfam/{index}.out"
+    "results/annotation/chunks/pfam/{index}.out"
   log:
     "logs/pfam_parallel/{index}.log"
   conda:
@@ -1649,10 +1660,10 @@ rule sprot_blastp_parallel:
   Runs blast search on SwissProt database on smaller protein files in parallel.
   """
   input:
-    fasta="annotations/chunks_orfs/{index}.orfs",
+    fasta="results/annotation/chunks/orfs/{index}.orfs",
     db=DB_DIR + "/uniprot_sprot.fasta"
   output:
-    "annotations/sprotblastp/{index}.out"
+    "results/annotation/chunks/sprotblastp/{index}.out"
   log:
     "logs/sprot_blastp_parallel/{index}.log"
   conda:
@@ -1672,10 +1683,10 @@ rule sprot_blastx_parallel:
   Runs blast search on SwissProt database on smaller nucleotide files in parallel.
   """
   input:
-    fasta="annotations/chunks_fasta/{index}.fasta",
+    fasta="results/annotation/chunks/fasta/{index}.fasta",
     db=DB_DIR + "/uniprot_sprot.fasta"
   output:
-    "annotations/sprotblastx/{index}.out"
+    "results/annotation/chunks/sprotblastx/{index}.out"
   log:
     "logs/sprot_blastx_parallel/{index}.log"
   conda:
@@ -1696,9 +1707,9 @@ rule tmhmm_parallel:
   topology.
   """
   input:
-    "annotations/chunks_pep/{index}.pep"
+    "results/annotation/chunks/pep/{index}.pep"
   output:
-    "annotations/tmhmm/{index}.out"
+    "results/annotation/chunks/tmhmm/{index}.out"
   log:
     "logs/tmhmm_parallel/{index}.log"
   params:
@@ -1770,9 +1781,9 @@ rule signalp_parallel:
   Runs signalp on smaller protein files in parallel to predict signal peptides.
   """
   input:
-    "annotations/chunks_pep/{index}.pep"
+    "results/annotation/chunks/pep/{index}.pep"
   output:
-    "annotations/signalp/{index}.out"
+    "results/annotation/chunks/signalp/{index}.out"
   log:
     "logs/signalp_parallel/{index}.log"
   conda:
@@ -1783,10 +1794,10 @@ rule signalp_parallel:
     1
   shell:
     """
-    mkdir -p annotations/signalp &> {log}
-    signalp6 --fastafile {input} --organism eukarya --output_dir signalp_{wildcards.index} --format none --mode fast &>> {log}
-    mv signalp_{wildcards.index}/prediction_results.txt {output}
-    rm -r signalp_{wildcards.index}
+    TMP=results/annotation/chunks/tmp/signalp_{wildcards.index}
+    signalp6 --fastafile {input} --organism eukarya --output_dir $TMP --format none --mode fast &> {log}
+    mv $TMP/prediction_results.txt {output}
+    rm -r $TMP
     """
 
 rule targetp_parallel:
@@ -1795,9 +1806,9 @@ rule targetp_parallel:
   targeting peptide.
   """
   input:
-    "annotations/chunks_pep/{index}.pep"
+    "results/annotation/chunks/pep/{index}.pep"
   output:
-    "annotations/targetp/{index}.out"
+    "results/annotation/chunks/targetp/{index}.out"
   log:
     "logs/targetp_parallel/{index}.log"
   conda:
@@ -1808,8 +1819,12 @@ rule targetp_parallel:
     1
   shell:
     """
-    targetp -fasta {input} -format short -org {config[targetp]} -prefix {wildcards.index} &> {log}
-    mv {wildcards.index}_summary.targetp2 {output} &>> {log}
+    # targetp writes its result into the folder it runs in
+    RUN=$(pwd)
+    mkdir -p results/annotation/chunks/tmp
+    cd results/annotation/chunks/tmp
+    targetp -fasta "$RUN/{input}" -format short -org {config[targetp]} -prefix targetp_{wildcards.index} &> "$RUN/{log}"
+    mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}" &>> "$RUN/{log}"
     """
 
 
@@ -2128,19 +2143,19 @@ rule annotated_fasta:
   """
   input:
     transcriptome="results/assembly/transcriptome.fasta",
-    proteome="transcriptome.pep",
-    expression="transcriptome_expression_isoform.tsv",
-    blastx_results="annotations/sprotblastx_fasta.out",
-    rfam_results="annotations/rfam_fasta.out",
-    blastp_results="annotations/sprotblastp_orfs.out",
-    pfam_results="annotations/pfam_orfs.out",
-    tmhmm_results="annotations/tmhmm_pep.out",
-    signalp_results="annotations/signalp_pep.out",
-    targetp_results="annotations/targetp_pep.out"
+    proteome="results/transdecoder/transcriptome.pep",
+    expression="results/expression/transcriptome_expression_isoform.tsv",
+    blastx_results="results/annotation/sprotblastx_fasta.out",
+    rfam_results="results/annotation/rfam_fasta.out",
+    blastp_results="results/annotation/sprotblastp_orfs.out",
+    pfam_results="results/annotation/pfam_orfs.out",
+    tmhmm_results="results/annotation/tmhmm_pep.out",
+    signalp_results="results/annotation/signalp_pep.out",
+    targetp_results="results/annotation/targetp_pep.out"
   output:
-    transcriptome_annotated="transcriptome_annotated.fasta",
-    proteome_annotated="transcriptome_annotated.pep",
-    tpm_blast_table="transcriptome_TPM_blast.csv"
+    transcriptome_annotated="results/annotation/transcriptome_annotated.fasta",
+    proteome_annotated="results/annotation/transcriptome_annotated.pep",
+    tpm_blast_table="results/annotation/transcriptome_TPM_blast.csv"
   log:
     "logs/annotated_fasta.log"
   params:

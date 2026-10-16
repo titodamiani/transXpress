@@ -760,15 +760,14 @@ rule trinity_butterfly_parallel:
       RUN=$(pwd)
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
       echo "work folder: $WORK" &> {log}
-      # On a failure, the work folders go to read_partitions, where they would stand without --workdir,
-      # small files first, because a time limit leaves 30 s before Slurm kills the job.
+      # On a failure, the work folders go to read_partitions, where they would stand without --workdir.
+      # A job that Slurm kills at its time limit or with scancel copies nothing.
       on_exit() {{
         rc=$?
         set +e
         trap - EXIT TERM
         if [ $rc -ne 0 ] && [ -d "$WORK/trinity_work" ]; then
           echo "the chunk stopped with code $rc, so $WORK/trinity_work goes to trinity_out_dir/read_partitions" &>> {log}
-          ( cd "$WORK/trinity_work" && find . -type f -size -100M -print0 | xargs -0 -r cp -p --parents -t "$RUN/trinity_out_dir/read_partitions" ) &>> {log}
           cp -rp "$WORK/trinity_work/." trinity_out_dir/read_partitions/ &>> {log}
         fi
         rm -rf "$WORK"
@@ -917,15 +916,15 @@ rule rnaspades:
       RUN=$(pwd)
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
       echo "work folder: $WORK" &>> {log}
-      # On a failure, the local folder goes to rnaspades_out as it would stand today, small files first,
-      # because a time limit leaves 30 s before Slurm kills the job. The local folder is deleted in all cases.
+      # On a failure, the local folder goes to rnaspades_out, where it would stand without the local disk.
+      # A job that Slurm kills at its time limit or with scancel copies nothing. The local folder is deleted
+      # in all cases.
       on_exit() {{
         rc=$?
         set +e
         trap - EXIT TERM
         if [ $rc -ne 0 ]; then
           echo "rnaspades stopped with code $rc, so $WORK/rnaspades_out goes to rnaspades_out" &>> {log}
-          ( cd "$WORK" && find rnaspades_out -type f -size -100M -print0 | xargs -0 -r cp -p --parents -t "$RUN" ) &>> {log}
           cp -rp "$WORK/rnaspades_out/." rnaspades_out/ &>> {log}
         fi
         rm -rf "$WORK"
@@ -1248,8 +1247,8 @@ checkpoint align_reads:
       copy_back() {{
         ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l -exec cp -rp -t "$RUN" {{}} + )
       }}
-      # On a failure, the files go to the run folder as they would stand without the local disk, small
-      # files first, because a time limit leaves 30 s before Slurm kills the job.
+      # On a failure, the files go to the run folder, where they would stand without the local disk.
+      # A job that Slurm kills at its time limit or with scancel copies nothing.
       on_exit() {{
         rc=$?
         set +e
@@ -1257,7 +1256,6 @@ checkpoint align_reads:
         cd "$RUN"
         if [ $rc -ne 0 ]; then
           echo "align_reads stopped with code $rc, so the files in $WORK go to the run folder" &>> "$LOG"
-          ( cd "$WORK" && find . -type f -size -100M -print0 | xargs -0 -r cp -p --parents -t "$RUN" ) &>> "$LOG"
           copy_back &>> "$LOG"
         fi
         rm -rf "$WORK"
@@ -1849,8 +1847,8 @@ rule kallisto:
       copy_back() {{
         ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l -exec cp -rp -t "$RUN" {{}} + )
       }}
-      # On a failure, the files go to the run folder as they would stand without the local disk, small
-      # files first, because a time limit leaves 30 s before Slurm kills the job.
+      # On a failure, the files go to the run folder, where they would stand without the local disk.
+      # A job that Slurm kills at its time limit or with scancel copies nothing.
       on_exit() {{
         rc=$?
         set +e
@@ -1858,7 +1856,6 @@ rule kallisto:
         cd "$RUN"
         if [ $rc -ne 0 ]; then
           echo "kallisto stopped with code $rc, so the files in $WORK go to the run folder" &>> "$LOG"
-          ( cd "$WORK" && find . -type f -size -100M -print0 | xargs -0 -r cp -p --parents -t "$RUN" ) &>> "$LOG"
           copy_back &>> "$LOG"
         fi
         rm -rf "$WORK"

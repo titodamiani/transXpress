@@ -316,7 +316,7 @@ With the key set, each of the four rules makes its own folder under that variabl
 
 When the variable is not set in a job, for example on a computer without a cluster, the rule works in the run folder.
 
-When a rule fails, it copies its local files to the place the rule writes them without the local disk, so they can be read to find the cause. The files under 100 MB go first: when a job reaches its time limit, Slurm stops it and kills it 30 seconds later by default (`KillWait`), so only those may arrive. A node that crashes leaves nothing, because the local disk is out of reach. The rule log in `logs/` holds the output of the tool in every case.
+When a rule fails, for example on an error of the tool or when the kernel stops it for lack of memory, it copies its local files to the place the rule writes them without the local disk, so they can be read to find the cause. A job that Slurm stops at its time limit or with `scancel` copies nothing: Slurm ends the Snakemake process of the job at once, and with it every process the job started. A node that crashes leaves nothing either. In all these cases the rule log in `logs/` holds the output of the tool up to the stop, and the Slurm log `logs/<rule>.log.slurm` names a time limit.
 
 The local disk of a node is shared by the jobs on it, and a cluster may not reserve disk space for a job. `rnaspades` needed about 120 GB of working files for 9 libraries of about 23 million read pairs each.
 

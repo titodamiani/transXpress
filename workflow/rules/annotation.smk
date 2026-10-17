@@ -1,161 +1,60 @@
+# The three sequence sets that the annotation tools read: the transcripts (fasta), the long ORFs (orfs)
+# and the proteins (pep). The extension of a chunk file is the name of its set.
+ANNOTATION_SPLIT_INPUT = {
+  "fasta": "results/assembly/transcriptome.fasta",
+  "orfs": "results/transdecoder/transcriptome.orfs",
+  "pep": "results/transdecoder/transcriptome.pep"}
+
+wildcard_constraints:
+  split="fasta|orfs|pep"
+
 # a more elegant way to do this is:
 # seqkit seq -i {input} | seqkit replace -s -p "\*" -r "" | seqkit split -f -s 1 -O {output}
 # however, there seems to be a problem in seqkit: https://github.com/shenwei356/seqkit/issues/65
-checkpoint fasta_split_fasta:
+checkpoint fasta_split:
   """
-  Splits the transcriptome.fasta into smaller files so
+  Splits the transcriptome.fasta, the transcriptome.orfs or the transcriptome.pep into smaller files so
   they can be processed (annotated) in parallel.
   """
   input:
-    "results/assembly/transcriptome.fasta"
+    lambda wildcards: ANNOTATION_SPLIT_INPUT[wildcards.split]
   output:
-    directory("results/annotation/chunks/fasta")
+    directory("results/annotation/chunks/{split}")
   log:
-    "logs/fasta_split_fasta.log"
+    "logs/fasta_split_{split}.log"
   params:
     memory="2",
-    chunk_size=ANNOTATION_CHUNK["fasta"],
-    extension="fasta",
-    strip_stop=False
+    chunk_size=lambda wildcards: ANNOTATION_CHUNK[wildcards.split],
+    extension=lambda wildcards: wildcards.split,
+    strip_stop=lambda wildcards: wildcards.split == "pep"
   threads:
     1
   script:
     "../scripts/split_fasta.py"
-        
 
 
-checkpoint fasta_split_orfs:
-  """
-  Splits the transcriptome.orfs into smaller files so
-  they can be processed (annotated) in parallel.
-  """
-  input:
-    "results/transdecoder/transcriptome.orfs"
-  output:
-    directory("results/annotation/chunks/orfs")
-  log:
-    "logs/fasta_split_orfs.log"
-  params:
-    memory="2",
-    chunk_size=ANNOTATION_CHUNK["orfs"],
-    extension="orfs",
-    strip_stop=False
-  threads:
-    1
-  script:
-    "../scripts/split_fasta.py"
-        
-
-
-checkpoint fasta_split_pep:
-  """
-  Splits the transcriptome.pep into smaller files so
-  they can be processed (annotated) in parallel.
-  """
-  input:
-    "results/transdecoder/transcriptome.pep"
-  output:
-    directory("results/annotation/chunks/pep")
-  log:
-    "logs/fasta_split_pep.log"
-  params:
-    memory="2",
-    chunk_size=ANNOTATION_CHUNK["pep"],
-    extension="pep",
-    strip_stop=True
-  threads:
-    1
-  script:
-    "../scripts/split_fasta.py"
-        
-
-
-def parallel_annotation_tasks_fasta(wildcards):
+def parallel_annotation_tasks(wildcards):
   """
   Returns filenames of files which were annotated in parallel.
   """
-  parallel_dir = checkpoints.fasta_split_fasta.get(**wildcards).output[0]
+  parallel_dir = checkpoints.fasta_split.get(split=wildcards["split"]).output[0]
   # sorted by number, so the merged file follows the order of the sequences at any chunk size.
   # glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.fasta")).index, key=int)
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}." + wildcards["split"])).index, key=int)
   completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
 
-def parallel_annotation_tasks_orfs(wildcards):
-  """
-  Returns filenames of files which were annotated in parallel.
-  """
-  parallel_dir = checkpoints.fasta_split_orfs.get(**wildcards).output[0]
-  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
-  # glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index, key=int)
-  completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
-  return completed_files
-
-
-def parallel_annotation_tasks_pep(wildcards):
-  """
-  Returns filenames of files which were annotated in parallel.
-  """
-  parallel_dir = checkpoints.fasta_split_pep.get(**wildcards).output[0]
-  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
-  # glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index, key=int)
-  completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
-  return completed_files
-
-
-rule annotation_merge_fasta:
+rule annotation_merge:
   """
   Merges files that were annotated in parallel into a single file.
   """
   input:
-    parallel_annotation_tasks_fasta
+    parallel_annotation_tasks
   output:
-    "results/annotation/{task}_fasta.out"
+    "results/annotation/{task}_{split}.out"
   log:
-    "logs/annotation_merge_fasta/{task}.log"
-  params:
-    memory="2"
-  threads:
-    1
-  shell:
-    """
-    cat {input} > {output} 2> {log}
-    """
-
-
-rule annotation_merge_orfs:
-  """
-  Merges files that were annotated in parallel into a single file.
-  """
-  input:
-    parallel_annotation_tasks_orfs
-  output:
-    "results/annotation/{task}_orfs.out"
-  log:
-    "logs/annotation_merge_orfs/{task}.log"
-  params:
-    memory="2"
-  threads:
-    1
-  shell:
-    """
-    cat {input} > {output} 2> {log}
-    """
-
-
-rule annotation_merge_pep:
-  """
-  Merges files that were annotated in parallel into a single file.
-  """
-  input:
-    parallel_annotation_tasks_pep
-  output:
-    "results/annotation/{task}_pep.out"
-  log:
-    "logs/annotation_merge_pep/{task}.log"
+    "logs/annotation_merge_{split}/{task}.log"
   params:
     memory="2"
   threads:

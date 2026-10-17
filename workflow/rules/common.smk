@@ -117,35 +117,6 @@ onstart:
       if log_folder:
         os.makedirs(log_folder, exist_ok=True)
 
-rule all:
-  """
-  List of target files of the transxpress pipeline.
-  """
-  input:
-    "results/trimmomatic/samples_trimmed.txt",
-    "results/assembly/transcriptome.fasta",
-    "results/transdecoder/transcriptome.pep",
-    expand("results/transdecoder/transcriptome_all_orfs.{ext}", ext=["pep", "cds", "gff3", "bed"]),
-    expand("results/transdecoder/transcriptome_single_best_orf.{ext}", ext=["pep", "cds", "gff3", "bed"]),
-    "results/qc/transcriptome_stats.txt",
-    "results/qc/ExN50_plot.pdf",
-    "results/annotation/transcriptome_annotated.fasta",
-    "results/annotation/transcriptome_annotated.pep",
-    "results/annotation/transcriptome_TPM_blast.csv",
-    "results/qc/busco",
-    "results/qc/busco_report.txt",
-    "results/qc/fastqc_before_trim",
-    "results/qc/multiqc_before_trim",
-    "results/qc/fastqc_after_trim",
-    "results/qc/multiqc_after_trim",
-    "results/qc/multiqc_before_trim.txt",
-    "results/qc/multiqc_after_trim.txt",
-    "results/qc/WARNING_fastqc_before_trim_overview.txt",
-    "results/qc/FastQC_comparison_after_trim.txt",
-    "results/expression/edger",
-    "results/run_info.txt"
-
-
 rule clean:
   """
   Not run by default. Deletes the results and the logs of the run, so the next run starts from the

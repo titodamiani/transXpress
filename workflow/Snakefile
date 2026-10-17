@@ -9,6 +9,35 @@ include: "rules/orfs.smk"
 include: "rules/expression.smk"
 include: "rules/annotation.smk"
 
+# The default target has to be a rule of this file: Snakemake does not take the first rule of an included file.
+rule all:
+  """
+  List of target files of the transxpress pipeline.
+  """
+  input:
+    "results/trimmomatic/samples_trimmed.txt",
+    "results/assembly/transcriptome.fasta",
+    "results/transdecoder/transcriptome.pep",
+    expand("results/transdecoder/transcriptome_all_orfs.{ext}", ext=["pep", "cds", "gff3", "bed"]),
+    expand("results/transdecoder/transcriptome_single_best_orf.{ext}", ext=["pep", "cds", "gff3", "bed"]),
+    "results/qc/transcriptome_stats.txt",
+    "results/qc/ExN50_plot.pdf",
+    "results/annotation/transcriptome_annotated.fasta",
+    "results/annotation/transcriptome_annotated.pep",
+    "results/annotation/transcriptome_TPM_blast.csv",
+    "results/qc/busco",
+    "results/qc/busco_report.txt",
+    "results/qc/fastqc_before_trim",
+    "results/qc/multiqc_before_trim",
+    "results/qc/fastqc_after_trim",
+    "results/qc/multiqc_after_trim",
+    "results/qc/multiqc_before_trim.txt",
+    "results/qc/multiqc_after_trim.txt",
+    "results/qc/WARNING_fastqc_before_trim_overview.txt",
+    "results/qc/FastQC_comparison_after_trim.txt",
+    "results/expression/edger",
+    "results/run_info.txt"
+
 # Every job gets its temporary folder (TMPDIR, TMP and TEMP) from job_tmpdir, so the temporary files of
 # the tools go to the node's local disk when the scratch key is set. Snakemake evaluates the tmpdir
 # resource inside the job, where the variable is set.

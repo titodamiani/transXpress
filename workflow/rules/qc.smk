@@ -1,13 +1,15 @@
-rule fastqc_before_trim:
+rule fastqc:
   """
-  Runs fastQC on individual input reads files.
+  Runs fastQC on individual reads files: the input reads (before_trim) or the trimmed reads (after_trim).
   """
   input:
-    samples=config["samples_file"]
+    samples=lambda wildcards: config["samples_file"] if wildcards.stage == "before" else "results/trimmomatic/samples_trimmed.txt"
   output:
-    directory("results/qc/fastqc_before_trim")
+    directory("results/qc/fastqc_{stage}_trim")
+  wildcard_constraints:
+    stage="before|after"
   log:
-    "logs/fastqc_before_trim.log"
+    "logs/fastqc_{stage}_trim.log"
   conda:
     "../envs/qc.yaml"
   params:
@@ -25,17 +27,19 @@ rule fastqc_before_trim:
     """
 
 
-rule multiqc_before_trim:
+rule multiqc:
   """
-  Creates multiQC report from individual fastQC reports.
+  Creates multiQC report from individual fastQC reports, before or after the trimming.
   """
   input:
-    "results/qc/fastqc_before_trim"
+    "results/qc/fastqc_{stage}_trim"
   output:
-    out_dir=directory("results/qc/multiqc_before_trim"),
-    report="results/qc/multiqc_before_trim.txt"
+    out_dir=directory("results/qc/multiqc_{stage}_trim"),
+    report="results/qc/multiqc_{stage}_trim.txt"
+  wildcard_constraints:
+    stage="before|after"
   log:
-    "logs/multiqc_before_trim.log"
+    "logs/multiqc_{stage}_trim.log"
   conda:
     "../envs/qc.yaml"
   params:
@@ -66,61 +70,6 @@ rule fastqc_before_trim_warnings:
   script:
     "../scripts/fastqc_warnings.py"
     
-
-
-rule fastqc_after_trim:
-  """
-  Runs fastQC on individual trimmed reads files.
-  """
-  input:
-    samples="results/trimmomatic/samples_trimmed.txt"
-  output:
-    directory("results/qc/fastqc_after_trim")
-  log:
-    "logs/fastqc_after_trim.log"
-  conda:
-    "../envs/qc.yaml"
-  params:
-    memory="6"
-  threads:
-    8
-  shell:
-    """
-    # run fastqc on input files
-    # making directory for the fastqc summary files
-    mkdir {output} &> {log}
-    FILES=$(awk '{{ printf "%s\\n%s\\n", $3,$4}}' {input}) &>> {log}
-    # running fastqc on the files, {threads} of them at a time
-    fastqc -f fastq -t {threads} -o {output} $FILES &>> {log}
-    """
-
-
-rule multiqc_after_trim:
-  """
-  Creates multiQC report from individual fastQC reports after the trimming.
-  """
-  input:
-    "results/qc/fastqc_after_trim"
-  output:
-    out_directory=directory("results/qc/multiqc_after_trim"),
-    report="results/qc/multiqc_after_trim.txt"
-  log:
-    "logs/multiqc_after_trim.log"
-  conda:
-    "../envs/qc.yaml"
-  params:
-    memory="4"
-  threads:
-    1
-  shell:
-    """
-    # common error resolved by those two export commands
-    export LC_ALL=C.UTF-8
-    export LANG=C.UTF-8
-    mkdir {output.out_directory} &> {log}
-    multiqc -o {output.out_directory} {input} &>> {log}
-    cp {output.out_directory}/multiqc_data/multiqc_fastqc.txt {output.report} &>> {log}
-    """
 
 
 rule compare_qc_after_trim:

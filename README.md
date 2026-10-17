@@ -243,8 +243,8 @@ The time is the limit for the whole run, so it has to be longer than the longest
 
 You can run specific steps of the pipeline by specifying a rule or a resulting file:
 ~~~
-# run only the rules until the multiqc_before_trim rule to check quality of the input data
-./transXpress.sh multiqc_before_trim
+# run only the rules that make the FastQC and MultiQC report of the input data, to check its quality
+./transXpress.sh results/qc/multiqc_before_trim.txt
 ~~~
 ~~~
 # run only the rules to produce the samples_trimmed.txt file
@@ -253,8 +253,8 @@ You can run specific steps of the pipeline by specifying a rule or a resulting f
 
 or when using profiles:
 ~~~
-# run only the rules until the multiqc_before_trim rule to check quality of the input data
-snakemake multiqc_before_trim --profile profiles/slurm "$@"
+# run only the rules that make the FastQC and MultiQC report of the input data, to check its quality
+snakemake results/qc/multiqc_before_trim.txt --profile profiles/slurm "$@"
 ~~~
 ~~~
 # run only the rules to produce the samples_trimmed.txt file

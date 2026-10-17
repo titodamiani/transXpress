@@ -32,10 +32,16 @@ RNASPADES_FILTER = str(config.get("rnaspades_filter", "default"))
 if RNASPADES_FILTER not in ["default", "hard", "soft"]:
   raise ValueError("rnaspades_filter must be \"default\", \"hard\" or \"soft\". The config gives %s" % RNASPADES_FILTER)
 
-# The organism group that SignalP predicts signal peptides for.
-SIGNALP_ORGANISM = str(config.get("signalp", "eukarya"))
-if SIGNALP_ORGANISM not in ["eukarya", "other"]:
-  raise ValueError("signalp must be \"eukarya\" or \"other\". The config gives %s" % SIGNALP_ORGANISM)
+# The organism group that SignalP predicts signal peptides for. "" turns SignalP off.
+# A key with no value reaches here as None, which means "" too
+SIGNALP_ORGANISM = str(config.get("signalp", "eukarya") or "")
+if SIGNALP_ORGANISM not in ["", "eukarya", "other"]:
+  raise ValueError("signalp must be \"eukarya\", \"other\" or \"\". The config gives %s" % SIGNALP_ORGANISM)
+
+# The organism group that TargetP predicts targeting peptides for. "" turns TargetP off.
+TARGETP_ORGANISM = str(config.get("targetp", "non-pl") or "")
+if TARGETP_ORGANISM not in ["", "pl", "non-pl"]:
+  raise ValueError("targetp must be \"pl\", \"non-pl\" or \"\". The config gives %s" % TARGETP_ORGANISM)
 
 # The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
 ANNOTATION_CHUNK = {}
@@ -2103,8 +2109,8 @@ rule annotated_fasta:
     blastp_results="results/annotation/sprotblastp_orfs.out",
     pfam_results="results/annotation/pfam_orfs.out",
     tmhmm_results="results/annotation/tmhmm_pep.out",
-    signalp_results="results/annotation/signalp_pep.out",
-    targetp_results="results/annotation/targetp_pep.out"
+    signalp_results=["results/annotation/signalp_pep.out"] if SIGNALP_ORGANISM else [],
+    targetp_results=["results/annotation/targetp_pep.out"] if TARGETP_ORGANISM else []
   output:
     transcriptome_annotated="results/annotation/transcriptome_annotated.fasta",
     proteome_annotated="results/annotation/transcriptome_annotated.pep",
@@ -2182,43 +2188,45 @@ rule annotated_fasta:
             tmhmm_annotations[row[0]] = row[1] + " " + row[2]
 
       ## Load signalp results
-      print ("Loading signalp predictions from", input["signalp_results"], file=log_handle)
-      with open(input["signalp_results"]) as input_handle:
-        csv_reader = csv.reader(input_handle, delimiter="\t")
-        for row in csv_reader:
-          if (len(row) < 2): continue
-          prediction = str(row[1])
-          if prediction == "OTHER":
-            signalp_annotations[row[0]] = "OTHER (No SP)"
-          elif prediction == "SP":
-            signalp_annotations[row[0]] = "standard secretory signal peptides (Sec/SPI)"
-          elif prediction == "LIPO":
-            signalp_annotations[row[0]] = "lipoprotein signal peptides (Sec/SPII)"
-          elif prediction == "TAT":
-            signalp_annotations[row[0]] = "Tat signal peptides (Tat/SPI)"
-          elif prediction == "TATLIPO":
-            signalp_annotations[row[0]] = "Tat lipoprotein signal peptides (Tat/SPII)"
-          elif prediction == "PILIN":
-            signalp_annotations[row[0]] = "Pilin and pilin-like signal peptides (Sec/SPIII)"
-          else:
-            signalp_annotations[row[0]] = str(row[1])
+      if input["signalp_results"]:
+        print ("Loading signalp predictions from", input["signalp_results"], file=log_handle)
+        with open(input["signalp_results"]) as input_handle:
+          csv_reader = csv.reader(input_handle, delimiter="\t")
+          for row in csv_reader:
+            if (len(row) < 2): continue
+            prediction = str(row[1])
+            if prediction == "OTHER":
+              signalp_annotations[row[0]] = "OTHER (No SP)"
+            elif prediction == "SP":
+              signalp_annotations[row[0]] = "standard secretory signal peptides (Sec/SPI)"
+            elif prediction == "LIPO":
+              signalp_annotations[row[0]] = "lipoprotein signal peptides (Sec/SPII)"
+            elif prediction == "TAT":
+              signalp_annotations[row[0]] = "Tat signal peptides (Tat/SPI)"
+            elif prediction == "TATLIPO":
+              signalp_annotations[row[0]] = "Tat lipoprotein signal peptides (Tat/SPII)"
+            elif prediction == "PILIN":
+              signalp_annotations[row[0]] = "Pilin and pilin-like signal peptides (Sec/SPIII)"
+            else:
+              signalp_annotations[row[0]] = str(row[1])
 
       ## Load targetp results
-      translation =    {"SP": "Signal peptide",
-                        "mTP": "Mitochondrial transit peptide",
-                        "cTP": "chloroplast transit peptide",
-                        "luTP": "thylakoidal lumen composite transit peptide",
-                        "noTP": "no targeting peptide" }
-      print("Loading targetp predictions from", input["targetp_results"], file=log_handle)
-      with open(input["targetp_results"]) as input_handle:
-        for line in input_handle:
-          if (line.startswith("#")): continue
-          row = line.split()
-          if (len(row) >= 8):
-            targetp_annotations[row[0]] = translation[row[1]] + ", " + " ".join(row[7:])
-          elif (len(row) >= 2):
-            targetp_annotations[row[0]] = translation[row[1]]
-      
+      if input["targetp_results"]:
+        translation =    {"SP": "Signal peptide",
+                          "mTP": "Mitochondrial transit peptide",
+                          "cTP": "chloroplast transit peptide",
+                          "luTP": "thylakoidal lumen composite transit peptide",
+                          "noTP": "no targeting peptide" }
+        print("Loading targetp predictions from", input["targetp_results"], file=log_handle)
+        with open(input["targetp_results"]) as input_handle:
+          for line in input_handle:
+            if (line.startswith("#")): continue
+            row = line.split()
+            if (len(row) >= 8):
+              targetp_annotations[row[0]] = translation[row[1]] + ", " + " ".join(row[7:])
+            elif (len(row) >= 2):
+              targetp_annotations[row[0]] = translation[row[1]]
+
       ## Do the work
       print ("Annotating FASTA file", input["transcriptome"], "to", output["transcriptome_annotated"], file=log_handle)
       with open(input["transcriptome"], "r") as input_fasta_handle, open(output["transcriptome_annotated"], "w") as output_fasta_handle:

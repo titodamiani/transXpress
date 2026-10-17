@@ -385,6 +385,8 @@ scratch: "$SCRATCH"
 
 Ask your cluster documentation which variable that is. On some clusters `$TMPDIR` is in memory, and a file there counts against the memory of the job. The default `""` runs every rule in the run folder.
 
+In a profile (`config:`) or with `--config` on the command line, write the name without its `$`, for example `scratch: "SCRATCH"`. Snakemake passes these values to each cluster job on the `sbatch` line, and the shell there would put the folder of the main job in place of `$SCRATCH`.
+
 With the key set, every job gets that folder as its temporary folder: Snakemake sets `TMPDIR`, `TMP` and `TEMP` of the job to it. `signalp_parallel`, `targetp_parallel` and `tmhmm_parallel` write their work files there. Five rules make their own folder under it, work there, and copy their files to the run folder when they end:
 
 | Rule | Works on the local disk | Copied to the run folder |

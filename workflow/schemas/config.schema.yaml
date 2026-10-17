@@ -14,9 +14,9 @@ properties:
     enum: [trinity, rnaspades]
   scratch:
     type: [string, "null"]
-    pattern: '^(\$[A-Za-z_][A-Za-z0-9_]*)?$'
+    pattern: '^(\$?[A-Za-z_][A-Za-z0-9_]*)?$'
     default: ""
-    description: The environment variable, with its $, that holds the node-local folder. "" works in the run folder.
+    description: The environment variable, with or without its $, that holds the node-local folder. "" works in the run folder.
   trinity_parameters:
     type: string
   strand_specific:

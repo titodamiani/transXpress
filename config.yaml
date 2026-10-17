@@ -16,8 +16,10 @@ assembler: "trinity"
 # in a folder on the node's own disk, and copy their files to the run folder when they end. Every
 # other job keeps its temporary files there too. This keeps the working files off the shared
 # network storage. rnaspades, trinity, kallisto and align_reads stop when the folder is in memory.
-# Give the environment variable that holds that folder in a cluster job, with its $, for example
-# "$SCRATCH" or "$TMPDIR". Pick one that is on a disk: on some clusters $TMPDIR is in memory.
+# Give the environment variable that holds that folder in a cluster job, for example "$SCRATCH" or
+# "$TMPDIR". Pick one that is on a disk: on some clusters $TMPDIR is in memory.
+# In a profile or with --config, write the name without the $, for example "SCRATCH": Snakemake
+# passes that value to each cluster job through a shell, which would put in the folder of the main job.
 # "" runs every rule in the run folder.
 scratch: ""
 

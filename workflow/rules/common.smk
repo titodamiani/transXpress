@@ -55,11 +55,11 @@ TARGETP_ORGANISM = config["targetp"] or ""
 # The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
 ANNOTATION_CHUNK = {split: config["annotation_chunk_" + split] for split in ["fasta", "orfs", "pep"]}
 
-# The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH".
-# "" runs every rule in the run folder. The heavy rules read the variable with bash, inside the job,
-# because only the job knows its value.
+# The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH" or
+# "SCRATCH". "" runs every rule in the run folder. The heavy rules read the variable with bash, inside
+# the job, because only the job knows its value.
 SCRATCH = config["scratch"] or ""
-SCRATCH_VAR = SCRATCH[1:]
+SCRATCH_VAR = SCRATCH.lstrip("$")
 # The shell functions that the heavy rules use to work in that folder
 SCRATCH_SH = os.path.join(workflow.basedir, "scripts", "scratch.sh")
 

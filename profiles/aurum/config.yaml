@@ -21,5 +21,6 @@ default-resources:
   slurm_extra: "'--exclude=d001,d035'"
 
 config:
-  # The heavy rules work in the job's folder on the node's local disk
-  scratch: "$SCRATCH"
+  # The heavy rules work in the job's folder on the node's local disk, $SCRATCH. The name goes without
+  # its $, because the sbatch line passes it through a shell, which would put in the main job's folder.
+  scratch: "SCRATCH"

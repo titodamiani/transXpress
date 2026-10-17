@@ -12,7 +12,7 @@ from snakemake.utils import min_version, validate
 from Bio.Seq import Seq
 import pandas as pd
 
-min_version("5.4.1")
+min_version("9.27.0")
 
 configfile: "config.yaml"
 
@@ -21,6 +21,13 @@ configfile: "config.yaml"
 os.environ.setdefault("PIP_NO_BUILD_ISOLATION", "0")
 
 validate(config, os.path.join(workflow.basedir, "schemas", "config.schema.yaml"), set_default=True)
+
+def gb_to_mb(gb):
+  """
+  The mem_mb resource for a memory figure of config.yaml, which is in GB. Slurm reads the --mem value
+  in MB of 1024 KB, so 1 GB is 1024 MB here.
+  """
+  return int(float(gb) * 1024)
 
 # The releases of the annotation databases. The download rules fetch exactly these releases.
 PFAM_RELEASE = config["pfam_release"]
@@ -112,6 +119,11 @@ rule clean:
   Not run by default. Deletes the results and the logs of the run, so the next run starts from the
   beginning. Keeps config.yaml, the samples file, resources/ and .snakemake/.
   """
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   shell:
     """
     rm -rf results logs
@@ -124,6 +136,11 @@ rule delete_intermediates:
   result stays and a later snakemake run in this folder has nothing to do: the trimmed reads and the
   kallisto, bowtie2 and RSEM indexes.
   """
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   shell:
     """
     rm -f results/trimmomatic/reads/*.fastq.gz
@@ -142,9 +159,11 @@ rule run_info:
   output:
     "results/run_info.txt"
   params:
-    memory="2",
     basedir=workflow.basedir
   threads:
     1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   script:
     "../scripts/run_info.py"

@@ -15,12 +15,14 @@ checkpoint align_reads:
   conda:
     "../envs/trinity_utils.yaml"
   params:
-    memory=config.get("align_reads_memory", "100"),
     scratch_var=SCRATCH_VAR,
     scratch_sh=SCRATCH_SH,
     out_dir="results/expression/bowtie2_rsem"
   threads:
-    config.get("align_reads_threads", 16)
+    config["align_reads_threads"]
+  resources:
+    mem_mb=gb_to_mb(config["align_reads_memory"]),
+    runtime=config["align_reads_runtime"]
   # The common failures here are memory and time. A retry asks for the same figures and starts from the
   # beginning, so it would fail the same way, after hours on a large node.
   retries: 0
@@ -106,10 +108,11 @@ checkpoint prepare_samples_for_IGV:
     "logs/prepare_samples_for_IGV/{sample}.log"
   conda:
     "../envs/trinity_utils.yaml"
-  params:
-    memory="10"
   threads:
     4
+  resources:
+    mem_mb=10240,
+    runtime="4h"
   shell:
     """
     samtools sort --threads {threads} -m 2G -o {output.sorted_alignment} {input.alignment} &> {log}
@@ -136,6 +139,11 @@ rule IGV:
     "results/expression/bowtie2_rsem/igv/igv.ok"
   log:
     "logs/IGV.log"
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   shell:
     """
     touch {output}
@@ -155,10 +163,11 @@ rule trinity_DE:
     "logs/trinity_DE.log"
   conda:
     "../envs/trinity_utils.yaml"
-  params:
-    memory="2"
   threads:
     1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   shell:
     """
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
@@ -195,12 +204,14 @@ rule kallisto:
   conda:
     "../envs/trinity_utils.yaml"
   params:
-    memory=config.get("kallisto_memory", "20"),
     scratch_var=SCRATCH_VAR,
     scratch_sh=SCRATCH_SH,
     out_dir="results/expression/kallisto"
   threads:
-    config.get("kallisto_threads", 16)
+    config["kallisto_threads"]
+  resources:
+    mem_mb=gb_to_mb(config["kallisto_memory"]),
+    runtime=config["kallisto_runtime"]
   # The common failures here are memory and time. A retry asks for the same figures and starts from the
   # beginning, so it would fail the same way, after hours on a large node.
   retries: 0

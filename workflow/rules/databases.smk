@@ -18,12 +18,14 @@ if not DB_SHARED:
     conda:
       "../envs/blast.yaml"
     params:
-      memory="2",
       release=SPROT_RELEASE,
       current_url="https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete",
       archive_url="https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-" + SPROT_RELEASE + "/knowledgebase"
     threads:
       1
+    resources:
+      mem_mb=2048,
+      runtime="4h"
     shell:
       """
       db=$(dirname {output.fasta})
@@ -92,11 +94,13 @@ if not DB_SHARED:
     conda:
       "../envs/pfam.yaml"
     params:
-      memory="2",
       release=PFAM_RELEASE,
       url="https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam" + PFAM_RELEASE
     threads:
       1
+    resources:
+      mem_mb=2048,
+      runtime="4h"
     shell:
       """
       wget -O {output.hmm}.gz "{params.url}/Pfam-A.hmm.gz" &> {log}
@@ -127,11 +131,13 @@ if not DB_SHARED:
     conda:
       "../envs/rfam.yaml"
     params:
-      memory="2",
       release=RFAM_RELEASE,
       url="https://ftp.ebi.ac.uk/pub/databases/Rfam/" + RFAM_RELEASE
     threads:
       1
+    resources:
+      mem_mb=2048,
+      runtime="4h"
     shell:
       """
       wget -O {output.cm}.gz "{params.url}/Rfam.cm.gz" &> {log}
@@ -155,10 +161,12 @@ if not DB_SHARED:
     conda:
       "../envs/busco.yaml"
     params:
-      memory="2",
       lineage=LINEAGE
     threads:
       1
+    resources:
+      mem_mb=2048,
+      runtime="4h"
     shell:
       """
       # --download has to come last on the busco command line
@@ -176,10 +184,11 @@ if not DB_SHARED:
       lineage=["resources/db/busco_downloads/lineages/" + LINEAGE] if LINEAGE else []
     output:
       "resources/db/versions.txt"
-    params:
-      memory="2"
     threads:
       1
+    resources:
+      mem_mb=2048,
+      runtime="4h"
     run:
       with open(output[0], "w") as out:
         for path in input.versions:

@@ -43,6 +43,11 @@ checkpoint trimmomatic_split:
     directory("results/trimmomatic/reads")
   log:
     "logs/trimmomatic_split.log"
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   shell:
     """
     mkdir -p {output} &> {log}
@@ -63,10 +68,12 @@ rule trimmomatic_parallel:
   conda:
     "../envs/trimmomatic.yaml"
   params:
-    memory="4",
     trimmomatic=trimmomatic_parameters
   threads:
     8
+  resources:
+    mem_mb=4096,
+    runtime="4h"
   shell:
     """
     # record the computer this ran on, because the assembly depends on it
@@ -109,6 +116,11 @@ rule trimmomatic_merge:
     samples_trimmed="results/trimmomatic/samples_trimmed.txt"
   log:
     "logs/trimmomatic_merge.log"
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   shell:
     """
     cat {input} > {output.samples_trimmed} 2> {log}
@@ -126,6 +138,11 @@ rule samples_yaml_conversion:
     samples_yaml="results/trimmomatic/samples_trimmed.yaml"
   log:
     "logs/samples_yaml_conversion.log"
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   run:
     import os
     import os.path

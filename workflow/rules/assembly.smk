@@ -16,7 +16,8 @@ rule trinity:
     "../envs/trinity_utils.yaml"
   params:
     memory=config.get("trinity_memory", "450"),
-    scratch_var=SCRATCH_VAR
+    scratch_var=SCRATCH_VAR,
+    scratch_sh=SCRATCH_SH
   threads:
     config.get("trinity_threads", 32)
   # The common failures here are memory and time. A retry asks for the same figures and starts from the
@@ -33,22 +34,11 @@ rule trinity:
     # Trinity works in results/assembly/trinity, and a rerun after a failure continues from Trinity's own
     # checkpoints there. --full_cleanup deletes the work folder after a successful assembly.
     TRINITY_OUT=results/assembly/trinity
-    SCRATCH_VAR="{params.scratch_var}"
-    LOCAL_ROOT=""
-    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
-    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
-    # work files, so it stops there
-    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
-      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a {log} >&2
-      exit 1
-    fi
+    source {params.scratch_sh}
+    scratch_start "{params.scratch_var}" {log} stop
     if [ -n "$LOCAL_ROOT" ]; then
-      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
       # Trinity accepts only an output folder with "trinity" in its name
       TRINITY_OUT=$WORK/trinity
-      echo "work folder: $WORK" &>> {log}
-      trap 'rm -rf "$WORK"' EXIT
-      trap "exit 143" TERM
     fi
 
     Trinity --max_memory {params.memory}G --CPU {threads} --output "$TRINITY_OUT" --full_cleanup --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
@@ -80,7 +70,8 @@ rule rnaspades:
     "../envs/rnaspades.yaml"
   params:
     memory=config.get("rnaspades_memory", "400"),
-    scratch_var=SCRATCH_VAR
+    scratch_var=SCRATCH_VAR,
+    scratch_sh=SCRATCH_SH
   threads:
     config.get("rnaspades_threads", 32)
   # The common failures here are memory and time. A retry asks for the same figures and starts from the
@@ -96,37 +87,16 @@ rule rnaspades:
     # folder is copied to the run folder at the end. Otherwise it works in the run folder.
     OUT=results/assembly/rnaspades
     SPADES_OUT=$OUT
-    SCRATCH_VAR="{params.scratch_var}"
-    LOCAL_ROOT=""
-    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
-    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
-    # work files, so it stops there
-    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
-      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a {log} >&2
-      exit 1
-    fi
+    source {params.scratch_sh}
+    on_failure() {{
+      echo "rnaspades stopped with code $rc, so $WORK/rnaspades goes to $OUT" &>> {log}
+      mkdir -p "$OUT" &>> {log}
+      cp -rp "$WORK/rnaspades/." "$OUT/" &>> {log}
+    }}
+    scratch_start "{params.scratch_var}" {log} stop on_failure
     if [ -n "$LOCAL_ROOT" ]; then
       RUN=$(pwd)
-      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
       SPADES_OUT=$WORK/rnaspades
-      echo "work folder: $WORK" &>> {log}
-      # On a failure, the local folder goes to $OUT, where it would stand without the local disk.
-      # A job that Slurm kills at its time limit or with scancel copies nothing. The local folder is deleted
-      # in all cases.
-      on_exit() {{
-        rc=$?
-        set +e
-        trap - EXIT TERM
-        if [ $rc -ne 0 ]; then
-          echo "rnaspades stopped with code $rc, so $WORK/rnaspades goes to $OUT" &>> {log}
-          mkdir -p "$OUT" &>> {log}
-          cp -rp "$WORK/rnaspades/." "$OUT/" &>> {log}
-        fi
-        rm -rf "$WORK"
-        exit $rc
-      }}
-      trap on_exit EXIT
-      trap "exit 143" TERM
     fi
 
     # No --checkpoints: Slurm deletes the local folder when the job ends, so a restart point would not survive

@@ -17,6 +17,7 @@ checkpoint align_reads:
   params:
     memory=config.get("align_reads_memory", "100"),
     scratch_var=SCRATCH_VAR,
+    scratch_sh=SCRATCH_SH,
     out_dir="results/expression/bowtie2_rsem"
   threads:
     config.get("align_reads_threads", 16)
@@ -35,40 +36,18 @@ checkpoint align_reads:
     : > "$LOG"
     OUT="$RUN/{params.out_dir}"
     mkdir -p "$OUT"
-    SCRATCH_VAR="{params.scratch_var}"
-    LOCAL_ROOT=""
-    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
-    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
-    # work files, so it stops there
-    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
-      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a "$LOG" >&2
-      exit 1
-    fi
-    if [ -n "$LOCAL_ROOT" ]; then
-      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
-      echo "work folder: $WORK" &>> "$LOG"
-      copy_back() {{
-        ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l ! -name samples_trimmed.txt -exec cp -rp -t "$OUT" {{}} + )
-      }}
-      # On a failure, the files go to the tool folder, where they would stand without the local disk.
-      # A job that Slurm kills at its time limit or with scancel copies nothing.
-      on_exit() {{
-        rc=$?
-        set +e
-        trap - EXIT TERM
-        cd "$RUN"
-        if [ $rc -ne 0 ]; then
-          echo "align_reads stopped with code $rc, so the files in $WORK go to {params.out_dir}" &>> "$LOG"
-          copy_back &>> "$LOG"
-        fi
-        rm -rf "$WORK"
-        exit $rc
-      }}
-      trap on_exit EXIT
-      trap "exit 143" TERM
-    else
-      WORK="$OUT"
-    fi
+    source {params.scratch_sh}
+    copy_back() {{
+      ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l ! -name samples_trimmed.txt -exec cp -rp -t "$OUT" {{}} + )
+    }}
+    # On a failure, the files go to the tool folder, where they would stand without the local disk.
+    on_failure() {{
+      cd "$RUN"
+      echo "align_reads stopped with code $rc, so the files in $WORK go to {params.out_dir}" &>> "$LOG"
+      copy_back &>> "$LOG"
+    }}
+    scratch_start "{params.scratch_var}" "$LOG" stop on_failure
+    if [ -z "$LOCAL_ROOT" ]; then WORK="$OUT"; fi
     cd "$WORK"
     ln -sfn "$RUN/{input.transcriptome}" transcriptome.fasta
     ln -sfn "$RUN/{input.gene_trans_map}" transcriptome.gene_trans_map
@@ -218,6 +197,7 @@ rule kallisto:
   params:
     memory=config.get("kallisto_memory", "20"),
     scratch_var=SCRATCH_VAR,
+    scratch_sh=SCRATCH_SH,
     out_dir="results/expression/kallisto"
   threads:
     config.get("kallisto_threads", 16)
@@ -241,40 +221,18 @@ rule kallisto:
     : > "$LOG"
     OUT="$RUN/{params.out_dir}"
     mkdir -p "$OUT"
-    SCRATCH_VAR="{params.scratch_var}"
-    LOCAL_ROOT=""
-    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
-    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
-    # work files, so it stops there
-    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
-      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a "$LOG" >&2
-      exit 1
-    fi
-    if [ -n "$LOCAL_ROOT" ]; then
-      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
-      echo "work folder: $WORK" &>> "$LOG"
-      copy_back() {{
-        ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l ! -name samples_trimmed.txt -exec cp -rp -t "$OUT" {{}} + )
-      }}
-      # On a failure, the files go to the tool folder, where they would stand without the local disk.
-      # A job that Slurm kills at its time limit or with scancel copies nothing.
-      on_exit() {{
-        rc=$?
-        set +e
-        trap - EXIT TERM
-        cd "$RUN"
-        if [ $rc -ne 0 ]; then
-          echo "kallisto stopped with code $rc, so the files in $WORK go to {params.out_dir}" &>> "$LOG"
-          copy_back &>> "$LOG"
-        fi
-        rm -rf "$WORK"
-        exit $rc
-      }}
-      trap on_exit EXIT
-      trap "exit 143" TERM
-    else
-      WORK="$OUT"
-    fi
+    source {params.scratch_sh}
+    copy_back() {{
+      ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l ! -name samples_trimmed.txt -exec cp -rp -t "$OUT" {{}} + )
+    }}
+    # On a failure, the files go to the tool folder, where they would stand without the local disk.
+    on_failure() {{
+      cd "$RUN"
+      echo "kallisto stopped with code $rc, so the files in $WORK go to {params.out_dir}" &>> "$LOG"
+      copy_back &>> "$LOG"
+    }}
+    scratch_start "{params.scratch_var}" "$LOG" stop on_failure
+    if [ -z "$LOCAL_ROOT" ]; then WORK="$OUT"; fi
     cd "$WORK"
     ln -sfn "$RUN/{input.transcriptome}" transcriptome.fasta
     ln -sfn "$RUN/{input.gene_trans_map}" transcriptome.gene_trans_map

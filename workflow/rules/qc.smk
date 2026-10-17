@@ -244,7 +244,8 @@ rule busco:
     lineage=LINEAGE,
     # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
     download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else "--download_path resources/busco_downloads",
-    scratch_var=SCRATCH_VAR
+    scratch_var=SCRATCH_VAR,
+    scratch_sh=SCRATCH_SH
   threads:
     config.get("busco_threads", 16)
   shell:
@@ -255,16 +256,10 @@ rule busco:
     # nothing, because Snakemake deletes the output folder of a failed job; BUSCO's messages are in {log}.
     OUT={output.out_directory}
     BUSCO_PATH=$(dirname $OUT)
-    SCRATCH_VAR="{params.scratch_var}"
-    LOCAL_ROOT=""
-    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
     : > {log}
-    if [ -n "$LOCAL_ROOT" ]; then
-      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
-      BUSCO_PATH=$WORK
-      echo "work folder: $WORK" &>> {log}
-      trap 'rm -rf "$WORK"' EXIT
-    fi
+    source {params.scratch_sh}
+    scratch_start "{params.scratch_var}" {log} allow
+    if [ -n "$LOCAL_ROOT" ]; then BUSCO_PATH=$WORK; fi
 
     # an empty or missing lineage lets BUSCO choose the lineage automatically
     if [ -z "{params.lineage}" ]; then

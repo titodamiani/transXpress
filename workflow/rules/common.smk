@@ -63,6 +63,8 @@ SCRATCH = str(config.get("scratch") or "")
 if SCRATCH and not re.fullmatch(r"\$[A-Za-z_][A-Za-z0-9_]*", SCRATCH):
   raise ValueError("scratch must be \"\" or one environment variable with its $, for example \"$SCRATCH\". The config gives %s" % SCRATCH)
 SCRATCH_VAR = SCRATCH[1:]
+# The shell functions that the heavy rules use to work in that folder
+SCRATCH_SH = os.path.join(workflow.basedir, "scripts", "scratch.sh")
 
 def job_tmpdir(wildcards):
   """

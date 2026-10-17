@@ -115,11 +115,19 @@ sprot_release: "2026_03"
 # the transcripts (.gff3, .bed): transcriptome_all_orfs.* and transcriptome_single_best_orf.*.
 transdecoder_orfs: "all"
 
+# The number of sequences in each annotation chunk. Each tool runs one cluster job per chunk, and each
+# job reads the whole database, so larger chunks mean fewer jobs and fewer database reads.
+# fasta: the transcripts, for rfam and blastx. A chunk of 1000 takes blastx up to about 2.5 h.
+# orfs: the long ORFs, for pfam and blastp. pep: the proteins, for tmhmm, signalp and targetp.
+# A chunk of 5000 takes each of these tools about 1 h.
+annotation_chunk_fasta: 1000
+annotation_chunk_orfs: 5000
+annotation_chunk_pep: 5000
+
 # Memory in GB and the thread count of the rules whose size follows the dataset.
 # The values here suit about 420 million read pairs, which is 18 Illumina libraries.
-# Lower them for a smaller dataset. A rule that works on a fixed chunk of 1000
-# sequences keeps its size in the Snakefile, because that size holds at any
-# dataset size.
+# Lower them for a smaller dataset. A rule that works on one annotation chunk
+# keeps its size in the Snakefile, because that size holds at any dataset size.
 # Keep the assembler thread count the same across runs you want to compare. The
 # assembly depends on it.
 rnaspades_memory: "400"

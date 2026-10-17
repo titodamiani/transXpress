@@ -37,6 +37,14 @@ SIGNALP_ORGANISM = str(config.get("signalp", "eukarya"))
 if SIGNALP_ORGANISM not in ["eukarya", "other"]:
   raise ValueError("signalp must be \"eukarya\" or \"other\". The config gives %s" % SIGNALP_ORGANISM)
 
+# The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
+ANNOTATION_CHUNK = {}
+for chunk_split, chunk_default in [("fasta", 1000), ("orfs", 5000), ("pep", 5000)]:
+  chunk_value = config.get("annotation_chunk_" + chunk_split, chunk_default)
+  if isinstance(chunk_value, bool) or not isinstance(chunk_value, int) or chunk_value < 1:
+    raise ValueError("annotation_chunk_%s must be a whole number above 0. The config gives %s" % (chunk_split, chunk_value))
+  ANNOTATION_CHUNK[chunk_split] = chunk_value
+
 # The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH".
 # "" runs every rule in the run folder. The heavy rules read the variable with bash, inside the job,
 # because only the job knows its value.
@@ -1456,7 +1464,8 @@ checkpoint fasta_split_fasta:
   log:
     "logs/fasta_split_fasta.log"
   params:
-    memory="2"
+    memory="2",
+    chunk_size=ANNOTATION_CHUNK["fasta"]
   threads:
     1
   run:
@@ -1465,10 +1474,10 @@ checkpoint fasta_split_fasta:
       output_handle = None
       count = 0
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
-        if (count % 1000 == 0):
+        if (count % params.chunk_size == 0):
           if output_handle is not None:
             output_handle.close()
-          fileindex = str(int(count / 1000) + 1);
+          fileindex = str(int(count / params.chunk_size) + 1);
           filename = os.path.join(output[0], fileindex + ".fasta")
           output_handle = open(filename, "w");
         
@@ -1492,7 +1501,8 @@ checkpoint fasta_split_orfs:
   log:
     "logs/fasta_split_orfs.log"
   params:
-    memory="2"
+    memory="2",
+    chunk_size=ANNOTATION_CHUNK["orfs"]
   threads:
     1
   run:
@@ -1501,10 +1511,10 @@ checkpoint fasta_split_orfs:
       output_handle = None
       count = 0
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
-        if (count % 1000 == 0):
+        if (count % params.chunk_size == 0):
           if output_handle is not None:
             output_handle.close()
-          fileindex = str(int(count / 1000) + 1);
+          fileindex = str(int(count / params.chunk_size) + 1);
           filename = os.path.join(output[0], fileindex + ".orfs")
           output_handle = open(filename, "w");
         
@@ -1527,7 +1537,8 @@ checkpoint fasta_split_pep:
   log:
     "logs/fasta_split_pep.log"
   params:
-    memory="2"
+    memory="2",
+    chunk_size=ANNOTATION_CHUNK["pep"]
   threads:
     1
   run:
@@ -1536,10 +1547,10 @@ checkpoint fasta_split_pep:
       output_handle = None
       count = 0
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
-        if (count % 1000 == 0):
+        if (count % params.chunk_size == 0):
           if output_handle is not None:
             output_handle.close()
-          fileindex = str(int(count / 1000) + 1);
+          fileindex = str(int(count / params.chunk_size) + 1);
           filename = os.path.join(output[0], fileindex + ".pep")
           output_handle = open(filename, "w");
         # Remove predicted stop codons, because some annotation tools do not like them (e.g. InterProScan) 
@@ -1558,8 +1569,9 @@ def parallel_annotation_tasks_fasta(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_fasta.get(**wildcards).output[0]
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.fasta" )).index)
+  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
+  # glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.fasta")).index, key=int)
   completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1568,8 +1580,9 @@ def parallel_annotation_tasks_orfs(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_orfs.get(**wildcards).output[0]
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index)
+  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
+  # glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index, key=int)
   completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1578,8 +1591,9 @@ def parallel_annotation_tasks_pep(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_pep.get(**wildcards).output[0]
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index)
+  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
+  # glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index, key=int)
   completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 

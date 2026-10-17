@@ -37,6 +37,14 @@ SIGNALP_ORGANISM = str(config.get("signalp", "eukarya"))
 if SIGNALP_ORGANISM not in ["eukarya", "other"]:
   raise ValueError("signalp must be \"eukarya\" or \"other\". The config gives %s" % SIGNALP_ORGANISM)
 
+# The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
+ANNOTATION_CHUNK = {}
+for chunk_split, chunk_default in [("fasta", 1000), ("orfs", 5000), ("pep", 5000)]:
+  chunk_value = config.get("annotation_chunk_" + chunk_split, chunk_default)
+  if isinstance(chunk_value, bool) or not isinstance(chunk_value, int) or chunk_value < 1:
+    raise ValueError("annotation_chunk_%s must be a whole number above 0. The config gives %s" % (chunk_split, chunk_value))
+  ANNOTATION_CHUNK[chunk_split] = chunk_value
+
 # The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH".
 # "" runs every rule in the run folder. The heavy rules read the variable with bash, inside the job,
 # because only the job knows its value.
@@ -45,6 +53,13 @@ SCRATCH = str(config.get("scratch") or "")
 if SCRATCH and not re.fullmatch(r"\$[A-Za-z_][A-Za-z0-9_]*", SCRATCH):
   raise ValueError("scratch must be \"\" or one environment variable with its $, for example \"$SCRATCH\". The config gives %s" % SCRATCH)
 SCRATCH_VAR = SCRATCH[1:]
+
+def job_tmpdir(wildcards):
+  """
+  The temporary folder of a job: the folder in the variable that the scratch key names, or the
+  system default when the key is "" or the variable is not set. Snakemake calls this inside the job.
+  """
+  return (os.environ.get(SCRATCH_VAR, "") if SCRATCH_VAR else "") or tempfile.gettempdir()
 
 # The folder of the annotation databases. "resources/db" keeps one copy in each run folder, which the
 # pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
@@ -78,7 +93,7 @@ if DB_SHARED:
 # https://github.com/griffithlab/rnaseq_tutorial/wiki/Trinity-Assembly-And-Analysis
 
 # These rules don't need to be sent to a cluster
-localrules: all, clean, delete_intermediates, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, trinity_butterfly_split, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
+localrules: all, clean, delete_intermediates, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
 # A rule with a wildcard keeps its logs in logs/<rule>/, and the wildcard is only in the file name.
 # The cluster writes its own log next to the rule log before the job starts, and not every cluster
@@ -133,9 +148,8 @@ rule clean:
 rule delete_intermediates:
   """
   Not run by default. Deletes the large working files that no rule names as its output, so every
-  result stays and a later snakemake run in this folder has nothing to do: the trimmed reads, the
-  kallisto, bowtie2 and RSEM indexes, and the Trinity working folder apart from the files that the
-  Trinity rules name.
+  result stays and a later snakemake run in this folder has nothing to do: the trimmed reads and the
+  kallisto, bowtie2 and RSEM indexes.
   """
   shell:
     """
@@ -143,9 +157,6 @@ rule delete_intermediates:
     rm -f results/expression/kallisto/transcriptome.fasta.kallisto_idx
     # the bowtie2.ok marker goes with the index, so a later align_reads run builds the index again
     rm -f results/expression/bowtie2_rsem/transcriptome.fasta.bowtie2.* results/expression/bowtie2_rsem/transcriptome.fasta.RSEM.*
-    if [ -d results/assembly/trinity ]; then
-      find results/assembly/trinity -mindepth 1 -maxdepth 1 ! -name recursive_trinity.cmds ! -name recursive_trinity.cmds.completed ! -name parallel_jobs -exec rm -rf {{}} +
-    fi
     """
 
 
@@ -209,7 +220,7 @@ rule run_info:
       out.write("assembler\t%s\n" % config["assembler"])
       out.write("assembler_threads\t%s\n" % (
         config.get("rnaspades_threads", 32) if config["assembler"] == "rnaspades"
-        else config.get("trinity_final_threads", 16)))
+        else config.get("trinity_threads", 32)))
 
 
 rule fastqc_before_trim:
@@ -683,194 +694,27 @@ rule samples_yaml_conversion:
       output_handle.write(pprint.pformat(sample_list))
 
 
-rule trinity_inchworm_chrysalis:
+rule trinity:
   """
-  Runs first two stages of Trinity assembly (Inchworm and Chrysalis).
-  """
-  input:
-    samples="results/trimmomatic/samples_trimmed.txt",
-  output:
-    "results/assembly/trinity/recursive_trinity.cmds"
-  log:
-    "logs/trinity_inchworm_chrysalis.log"
-  conda:
-    "envs/trinity_utils.yaml"
-  params:
-    memory=config.get("trinity_inchworm_chrysalis_memory", "450")
-  threads:
-    config.get("trinity_inchworm_chrysalis_threads", 16)
-  # The common failures here are memory and time. A retry asks for the same figures and starts from the
-  # beginning, so it would fail the same way, after hours on a large node.
-  retries: 0
-  shell:
-    """
-    # record the computer this ran on, because the assembly depends on it
-    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
-
-    # Trinity ticks off the step that writes {output} with results/assembly/trinity/recursive_trinity.cmds.ok and
-    # does not check that the file that step wrote is still in place. trinity_final consumes the file and
-    # leaves recursive_trinity.cmds.completed behind, so after a pass the tick is there and the file is
-    # not. Trinity then skips the step, exits 0 and writes no output. So the tick goes first.
-    rm -f results/assembly/trinity/recursive_trinity.cmds.ok &>> {log}
-
-    # trinity_final deletes read_partitions once the assembly is written, because it holds one folder per
-    # read cluster and can reach millions of files. Trinity does not partition the reads again while
-    # results/assembly/trinity/partitioned_reads.files.list.ok is in place, and it leaves the top folder of
-    # read_partitions behind, so neither the folder nor its emptiness tells the two cases apart. Test the
-    # list itself: if the first read file it names is gone, the partitions are gone with it and every
-    # Butterfly chunk would stop on a missing input. A crashed run whose partitions are still in place
-    # keeps its tick, so its hours of partitioning are not repeated.
-    PARTITION_LIST=results/assembly/trinity/partitioned_reads.files.list
-    if [ ! -s $PARTITION_LIST ] || [ ! -e "$(head -1 $PARTITION_LIST)" ]; then
-      echo "read partitions are missing, so Trinity partitions the reads again" &>> {log}
-      rm -f $PARTITION_LIST.ok &>> {log}
-    fi
-
-    Trinity --no_distributed_trinity_exec --max_memory {params.memory}G --CPU {threads} --output results/assembly/trinity --samples_file {input} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
-    """
-
-
-checkpoint trinity_butterfly_split:
-  """
-  Preparation for last stage of Trinity (Butterfly) parallelization by splitting
-  the commands into independent parts.
+  Runs the whole Trinity assembly in one job. When the scratch key names a variable that is set in
+  this job, Trinity works in a folder on the node's local disk, and only the assembly and its gene
+  map come to the run folder.
   """
   input:
-    "results/assembly/trinity/recursive_trinity.cmds"
-  output:
-    directory("results/assembly/trinity/parallel_jobs")
-  log:
-    "logs/trinity_butterfly_split.log"
-  params:
-    cmds_per_chunk=config.get("trinity_butterfly_cmds_per_chunk", 20),
-    max_chunks=config.get("trinity_butterfly_max_chunks", 1000)
-  shell:
-    """
-    mkdir -p {output} &> {log}
-    # Each chunk is one Slurm job. A chunk holds at least cmds_per_chunk commands, so small data runs
-    # a few jobs, and there are at most max_chunks chunks, so large data does not submit more jobs.
-    COMMANDS=$(wc -l < {input})
-    CHUNKS=$(( (COMMANDS + {params.cmds_per_chunk} - 1) / {params.cmds_per_chunk} ))
-    if [ $CHUNKS -gt {params.max_chunks} ]; then CHUNKS={params.max_chunks}; fi
-    if [ $CHUNKS -lt 1 ]; then CHUNKS=1; fi
-    echo "$COMMANDS commands in $CHUNKS chunks" &>> {log}
-    # Note: it is important to use -d and not --numeric-suffixes, see https://github.com/transXpress/transXpress-snakemake/issues/12
-    split -n l/$CHUNKS -e -d {input} {output}/job_ &>> {log}
-    """
-
-
-rule trinity_butterfly_parallel:
-  """
-  Runs Trinity Butterfly commands (which were split into parts) in parallel.
-  """
-  input:
-    "results/assembly/trinity/parallel_jobs/job_{job_index}"
-  output:
-    # Keep this inside parallel_jobs. Each split deletes the folder, so every chunk runs again. After
-    # trinity_inchworm_chrysalis runs again, the job_ files can hold the same commands, and Snakemake
-    # skips a chunk whose job_ file has the same content and whose output sits in another folder.
-    "results/assembly/trinity/parallel_jobs/completed_{job_index}"
-  log:
-    "logs/trinity_butterfly_parallel/{job_index}.log"
-  conda:
-    "envs/trinity_utils.yaml"
-  params:
-    # A measured chunk job peaks near 550 MB. This rule has one instance per
-    # chunk, up to trinity_butterfly_max_chunks of them, so an oversized request here decides how many
-    # land on one node and leaves the rest of its cores idle.
-    memory="3",
-    scratch_var=SCRATCH_VAR
-  threads:
-    1
-  shell:
-    """
-    # Each line of the chunk is one small Trinity assembly, which writes and deletes many files. When the
-    # scratch key names a variable that is set in this job, --workdir puts those files on the node's local
-    # disk. Trinity still writes the fasta of each assembly into read_partitions.
-    SCRATCH_VAR="{params.scratch_var}"
-    LOCAL_ROOT=""
-    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
-    if [ -n "$LOCAL_ROOT" ]; then
-      RUN=$(pwd)
-      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
-      echo "work folder: $WORK" &> {log}
-      # On a failure, the work folders go to read_partitions, where they would stand without --workdir.
-      # A job that Slurm kills at its time limit or with scancel copies nothing.
-      on_exit() {{
-        rc=$?
-        set +e
-        trap - EXIT TERM
-        if [ $rc -ne 0 ] && [ -d "$WORK/trinity_work" ]; then
-          echo "the chunk stopped with code $rc, so $WORK/trinity_work goes to results/assembly/trinity/read_partitions" &>> {log}
-          cp -rp "$WORK/trinity_work/." results/assembly/trinity/read_partitions/ &>> {log}
-        fi
-        rm -rf "$WORK"
-        exit $rc
-      }}
-      trap on_exit EXIT
-      trap "exit 143" TERM
-      # Trinity accepts only a work folder with "trinity" in its name
-      sed 's|$| --workdir '"$WORK"'/trinity_work|' {input} | bash &>> {log}
-    else
-      bash {input} &> {log}
-    fi
-    cp -p {input} {output} &>> {log}
-    """
-
-
-def trinity_completed_parallel_jobs(wildcards):
-  """
-  Returns filenames of the files processed in parallel.
-  """
-  parallel_dir = checkpoints.trinity_butterfly_split.get(**wildcards).output[0]
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "job_{job_index}")).job_index)
-  completed_ids = expand(os.path.join(parallel_dir,"completed_{job_index}"), job_index=job_ids)
-  return completed_ids
-
-rule trinity_butterfly_parallel_merge:
-  input:
-    jobs=trinity_completed_parallel_jobs,
-    cmds="results/assembly/trinity/recursive_trinity.cmds"
-  output:
-    cmds_completed="results/assembly/trinity/recursive_trinity.cmds.completed"
-  log:
-    "logs/trinity_butterfly_parallel_merge.log"
-  params:
-    memory="10"
-  threads:
-    1
-  shell:
-    """
-    # Snakemake runs this script as one string of at most 131071 bytes, so naming every chunk file here
-    # stops near 2900 chunks with "Argument list too long", see
-    # https://bitbucket.org/snakemake/snakemake/issues/878/errno-7-argument-list-too-long-path-to-bin
-    # xargs passes the files to cat in calls that fit the limit, so the chunk count has no limit here.
-    # The list comes from the job_ files, as the rule input does, so a stray completed_ file is not read
-    # and a missing one stops cat. The chunk suffixes have a fixed width, so sort gives the order of the split.
-    {{ find results/assembly/trinity/parallel_jobs -maxdepth 1 -name 'job_*' | LC_ALL=C sort | sed 's|/job_|/completed_|' | xargs -r cat ; }} > {output.cmds_completed} 2> {log}
-    """
-
-
-rule trinity_final:
-  """
-  Runs the final Trinity assembly.
-  """
-  input:
-    cmds_completed="results/assembly/trinity/recursive_trinity.cmds.completed",
     samples="results/trimmomatic/samples_trimmed.txt"
   output:
     # Trinity writes these two beside its output folder, not inside it
     transcriptome="results/assembly/trinity.Trinity.fasta",
     gene_trans_map="results/assembly/trinity.Trinity.fasta.gene_trans_map"
   log:
-    "logs/trinity_final.log"
+    "logs/trinity.log"
   conda:
     "envs/trinity_utils.yaml"
   params:
-    memory=config.get("trinity_final_memory", "450")
+    memory=config.get("trinity_memory", "450"),
+    scratch_var=SCRATCH_VAR
   threads:
-    config.get("trinity_final_threads", 16)
+    config.get("trinity_threads", 32)
   # The common failures here are memory and time. A retry asks for the same figures and starts from the
   # beginning, so it would fail the same way, after hours on a large node.
   retries: 0
@@ -878,36 +722,38 @@ rule trinity_final:
     """
     # record the computer this ran on, because the assembly depends on it
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
-    # read_partitions is deleted after a successful assembly (see below), and Trinity needs it to collect the transcripts
-    # Trinity does not partition the reads again while its own checkpoint files exist, so they must be removed first
-    if [ ! -d results/assembly/trinity/read_partitions ]; then
-      echo "ERROR: results/assembly/trinity/read_partitions is missing. It was deleted after an earlier assembly." | tee -a {log} >&2
-      echo "To assemble again: rm -f results/assembly/trinity/partitioned_reads.files.list.ok results/assembly/trinity/recursive_trinity.cmds.ok" | tee -a {log} >&2
-      echo "then run snakemake again with: --forcerun trinity_inchworm_chrysalis" | tee -a {log} >&2
+
+    # Trinity writes one folder per read cluster in read_partitions, which can reach millions of files.
+    # On the local disk they never reach the run folder. A failed run copies nothing back: the files are
+    # the ones to keep off the shared disk, and Trinity's messages are in {log}. Without the local disk,
+    # Trinity works in results/assembly/trinity, and a rerun after a failure continues from Trinity's own
+    # checkpoints there. --full_cleanup deletes the work folder after a successful assembly.
+    TRINITY_OUT=results/assembly/trinity
+    SCRATCH_VAR="{params.scratch_var}"
+    LOCAL_ROOT=""
+    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
+    # work files, so it stops there
+    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
+      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a {log} >&2
       exit 1
     fi
+    if [ -n "$LOCAL_ROOT" ]; then
+      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
+      # Trinity accepts only an output folder with "trinity" in its name
+      TRINITY_OUT=$WORK/trinity
+      echo "work folder: $WORK" &>> {log}
+      trap 'rm -rf "$WORK"' EXIT
+      trap "exit 143" TERM
+    fi
 
-    # Trinity ticks off its last step with results/assembly/trinity/__salmon_filt.chkpts/salmon.filt.ok and does not
-    # check that the file that step wrote is still in place. With the tick of an earlier assembly present,
-    # Trinity skips the one command that writes {output.transcriptome}, prints "Trinity.fasta 0 MByte" and
-    # exits 0 with no assembly. So the ticks and the half-finished output of an earlier assembly go first.
-    rm -rf results/assembly/trinity/__salmon_filt.chkpts results/assembly/trinity/Trinity.tmp.fasta &>> {log}
+    Trinity --max_memory {params.memory}G --CPU {threads} --output "$TRINITY_OUT" --full_cleanup --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
 
-    Trinity --max_memory {params.memory}G --CPU {threads} --output results/assembly/trinity --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
-
-    # read_partitions holds one folder per read cluster (can be millions of files) and is not needed after the assembly
-    # Delete it only once the assembly is in place. Trinity can exit 0 without writing it, and read_partitions
-    # is the only input the assembly can be repeated from, so deleting it on a failed run loses the run.
-    if [ -s {output.transcriptome} ] && [ -s {output.gene_trans_map} ]; then
-      # rename first, so that a half-deleted folder is never left under its real name
-      rm -rf results/assembly/trinity/read_partitions.deleting &>> {log}
-      mv results/assembly/trinity/read_partitions results/assembly/trinity/read_partitions.deleting &>> {log}
-      rm -rf results/assembly/trinity/read_partitions.deleting &>> {log}
-    else
-      # fail here, so the log names the cause and Snakemake does not report only a missing output file
-      echo "ERROR: Trinity exited 0 but did not write {output.transcriptome} and {output.gene_trans_map}." | tee -a {log} >&2
-      echo "results/assembly/trinity/read_partitions is kept, so the assembly can run again. See {log}" | tee -a {log} >&2
-      exit 1
+    if [ -n "$LOCAL_ROOT" ]; then
+      START=$(date +%s)
+      cp -p "$TRINITY_OUT.Trinity.fasta" {output.transcriptome} &>> {log}
+      cp -p "$TRINITY_OUT.Trinity.fasta.gene_trans_map" {output.gene_trans_map} &>> {log}
+      echo "copied the assembly and the gene map from $WORK to results/assembly in $(( $(date +%s) - START )) s" &>> {log}
     fi
     """
 
@@ -949,6 +795,12 @@ rule rnaspades:
     SCRATCH_VAR="{params.scratch_var}"
     LOCAL_ROOT=""
     if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
+    # work files, so it stops there
+    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
+      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a {log} >&2
+      exit 1
+    fi
     if [ -n "$LOCAL_ROOT" ]; then
       RUN=$(pwd)
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
@@ -990,8 +842,8 @@ rule rnaspades:
 def transcriptome_copy_input(wildcards):
   if config["assembler"] == "rnaspades":
     return {"transcriptome": getattr(rules.rnaspades.output, RNASPADES_FILTER)}
-  return {"transcriptome": rules.trinity_final.output.transcriptome,
-          "gene_trans_map": rules.trinity_final.output.gene_trans_map}
+  return {"transcriptome": rules.trinity.output.transcriptome,
+          "gene_trans_map": rules.trinity.output.gene_trans_map}
 
 
 rule transcriptome_copy:
@@ -1075,11 +927,29 @@ rule busco:
     memory=config.get("busco_memory", "10"),
     lineage=LINEAGE,
     # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
-    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else "--download_path resources/busco_downloads"
+    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else "--download_path resources/busco_downloads",
+    scratch_var=SCRATCH_VAR
   threads:
     config.get("busco_threads", 16)
   shell:
     """
+    # BUSCO writes thousands of small files. When the scratch key names a variable that is set in this
+    # job, it works in a folder on the node's local disk, packs the per-gene folders there and copies its
+    # output folder to the run folder at the end. Otherwise it works in the run folder. A failed run copies
+    # nothing, because Snakemake deletes the output folder of a failed job; BUSCO's messages are in {log}.
+    OUT={output.out_directory}
+    BUSCO_PATH=$(dirname $OUT)
+    SCRATCH_VAR="{params.scratch_var}"
+    LOCAL_ROOT=""
+    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    : > {log}
+    if [ -n "$LOCAL_ROOT" ]; then
+      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
+      BUSCO_PATH=$WORK
+      echo "work folder: $WORK" &>> {log}
+      trap 'rm -rf "$WORK"' EXIT
+    fi
+
     # an empty or missing lineage lets BUSCO choose the lineage automatically
     if [ -z "{params.lineage}" ]; then
       lineage_option="--auto-lineage"
@@ -1088,19 +958,27 @@ rule busco:
     fi
 
     # -o takes a folder name and --out_path the folder that holds it
-    busco -m transcriptome -i {input.transcriptome} -o $(basename {output.out_directory}) --out_path $(dirname {output.out_directory}) $lineage_option -c {threads} {params.download_option} &> {log}
+    busco -m transcriptome -i {input.transcriptome} -o $(basename $OUT) --out_path $BUSCO_PATH $lineage_option -c {threads} {params.download_option} &>> {log}
     echo "BUSCO run completed successfully" &>> {log}
 
-    # with --auto-lineage BUSCO also writes a short_summary.generic.* file, the report is the specific one
-    cp {output.out_directory}/short_summary.specific.*.txt {output.report} &>> {log}
-
     # pack the per-gene folders (thousands of small files) into one archive each
-    for d in {output.out_directory}/run_*/busco_sequences {output.out_directory}/run_*/hmmer_output; do
+    for d in $BUSCO_PATH/$(basename $OUT)/run_*/busco_sequences $BUSCO_PATH/$(basename $OUT)/run_*/hmmer_output; do
       if [ -d "$d" ]; then
         tar -czf "$d.tar.gz" -C "$(dirname "$d")" "$(basename "$d")" &>> {log}
         rm -rf "$d" &>> {log}
       fi
     done
+
+    if [ -n "$LOCAL_ROOT" ]; then
+      SIZE=$(du -sh "$WORK" | cut -f1)
+      START=$(date +%s)
+      rm -rf $OUT &>> {log}
+      cp -rp $WORK/$(basename $OUT) $(dirname $OUT)/ &>> {log}
+      echo "copied $SIZE from $WORK to $OUT in $(( $(date +%s) - START )) s" &>> {log}
+    fi
+
+    # with --auto-lineage BUSCO also writes a short_summary.generic.* file, the report is the specific one
+    cp $OUT/short_summary.specific.*.txt {output.report} &>> {log}
     """
 
 rule transdecoder_longorfs:
@@ -1291,6 +1169,12 @@ checkpoint align_reads:
     SCRATCH_VAR="{params.scratch_var}"
     LOCAL_ROOT=""
     if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
+    # work files, so it stops there
+    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
+      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a "$LOG" >&2
+      exit 1
+    fi
     if [ -n "$LOCAL_ROOT" ]; then
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
       echo "work folder: $WORK" &>> "$LOG"
@@ -1456,7 +1340,8 @@ checkpoint fasta_split_fasta:
   log:
     "logs/fasta_split_fasta.log"
   params:
-    memory="2"
+    memory="2",
+    chunk_size=ANNOTATION_CHUNK["fasta"]
   threads:
     1
   run:
@@ -1465,10 +1350,10 @@ checkpoint fasta_split_fasta:
       output_handle = None
       count = 0
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
-        if (count % 1000 == 0):
+        if (count % params.chunk_size == 0):
           if output_handle is not None:
             output_handle.close()
-          fileindex = str(int(count / 1000) + 1);
+          fileindex = str(int(count / params.chunk_size) + 1);
           filename = os.path.join(output[0], fileindex + ".fasta")
           output_handle = open(filename, "w");
         
@@ -1492,7 +1377,8 @@ checkpoint fasta_split_orfs:
   log:
     "logs/fasta_split_orfs.log"
   params:
-    memory="2"
+    memory="2",
+    chunk_size=ANNOTATION_CHUNK["orfs"]
   threads:
     1
   run:
@@ -1501,10 +1387,10 @@ checkpoint fasta_split_orfs:
       output_handle = None
       count = 0
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
-        if (count % 1000 == 0):
+        if (count % params.chunk_size == 0):
           if output_handle is not None:
             output_handle.close()
-          fileindex = str(int(count / 1000) + 1);
+          fileindex = str(int(count / params.chunk_size) + 1);
           filename = os.path.join(output[0], fileindex + ".orfs")
           output_handle = open(filename, "w");
         
@@ -1527,7 +1413,8 @@ checkpoint fasta_split_pep:
   log:
     "logs/fasta_split_pep.log"
   params:
-    memory="2"
+    memory="2",
+    chunk_size=ANNOTATION_CHUNK["pep"]
   threads:
     1
   run:
@@ -1536,10 +1423,10 @@ checkpoint fasta_split_pep:
       output_handle = None
       count = 0
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
-        if (count % 1000 == 0):
+        if (count % params.chunk_size == 0):
           if output_handle is not None:
             output_handle.close()
-          fileindex = str(int(count / 1000) + 1);
+          fileindex = str(int(count / params.chunk_size) + 1);
           filename = os.path.join(output[0], fileindex + ".pep")
           output_handle = open(filename, "w");
         # Remove predicted stop codons, because some annotation tools do not like them (e.g. InterProScan) 
@@ -1558,8 +1445,9 @@ def parallel_annotation_tasks_fasta(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_fasta.get(**wildcards).output[0]
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.fasta" )).index)
+  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
+  # glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.fasta")).index, key=int)
   completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1568,8 +1456,9 @@ def parallel_annotation_tasks_orfs(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_orfs.get(**wildcards).output[0]
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index)
+  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
+  # glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.orfs")).index, key=int)
   completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1578,8 +1467,9 @@ def parallel_annotation_tasks_pep(wildcards):
   Returns filenames of files which were annotated in parallel.
   """
   parallel_dir = checkpoints.fasta_split_pep.get(**wildcards).output[0]
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index)
+  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
+  # glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.pep")).index, key=int)
   completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
   return completed_files
 
@@ -1754,8 +1644,11 @@ rule tmhmm_parallel:
   run:
     # open the input file, output file and log file
     # tmhmm.py writes its result files into the current directory, so each chunk works in its own temporary directory
-    # the temporary directory and the per-protein files in it are deleted when the chunk is done
-    with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory() as tmp_dir:
+    # in the job's temporary folder (see job_tmpdir). The directory and the per-protein files in it are deleted when
+    # the chunk is done
+    with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory(dir=job_tmpdir(wildcards)) as tmp_dir:
+      log_handle.write("work folder: " + tmp_dir + "\n")
+      log_handle.flush()
 
       # iterate through individual sequences in input file, tmhmm.py can be executed with just one sequence at a time
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
@@ -1830,9 +1723,11 @@ rule signalp_parallel:
     1
   shell:
     """
-    TMP=results/annotation/chunks/tmp/signalp_{wildcards.index}
-    signalp6 --fastafile {input} --organism {params.organism} --output_dir $TMP --format none --mode fast &> {log}
-    mv $TMP/prediction_results.txt {output}
+    # Snakemake sets TMPDIR to the job's temporary folder, see job_tmpdir
+    TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/signalp.XXXXXX")
+    echo "work folder: $TMP" &> {log}
+    signalp6 --fastafile {input} --organism {params.organism} --output_dir $TMP/out --format none --mode fast &>> {log}
+    mv $TMP/out/prediction_results.txt {output}
     rm -r $TMP
     """
 
@@ -1855,12 +1750,16 @@ rule targetp_parallel:
     1
   shell:
     """
-    # targetp writes its result into the folder it runs in
+    # targetp writes its result into the folder it runs in, which is the job's temporary folder
+    # (Snakemake sets TMPDIR, see job_tmpdir)
     RUN=$(pwd)
-    mkdir -p results/annotation/chunks/tmp
-    cd results/annotation/chunks/tmp
-    targetp -fasta "$RUN/{input}" -format short -org {config[targetp]} -prefix targetp_{wildcards.index} &> "$RUN/{log}"
+    TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/targetp.XXXXXX")
+    echo "work folder: $TMP" &> "$RUN/{log}"
+    cd $TMP
+    targetp -fasta "$RUN/{input}" -format short -org {config[targetp]} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
     mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}" &>> "$RUN/{log}"
+    cd "$RUN"
+    rm -r $TMP
     """
 
 
@@ -1910,6 +1809,12 @@ rule kallisto:
     SCRATCH_VAR="{params.scratch_var}"
     LOCAL_ROOT=""
     if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
+    # work files, so it stops there
+    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
+      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a "$LOG" >&2
+      exit 1
+    fi
     if [ -n "$LOCAL_ROOT" ]; then
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
       echo "work folder: $WORK" &>> "$LOG"
@@ -2365,3 +2270,8 @@ rule annotated_fasta:
           csv_writer.writerow(row)
 
 
+# Every job gets its temporary folder (TMPDIR, TMP and TEMP) from job_tmpdir, so the temporary files of
+# the tools go to the node's local disk when the scratch key is set. Snakemake evaluates the tmpdir
+# resource inside the job, where the variable is set.
+for workflow_rule in workflow.rules:
+  workflow_rule.resources["tmpdir"] = job_tmpdir

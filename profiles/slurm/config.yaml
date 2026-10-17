@@ -14,8 +14,12 @@
 # Snakemake formats the sbatch line before a shell sees it, so a brace that the
 # shell has to read is written twice.
 
+# Snakemake submits the jobs one after another, so the sleep keeps the submissions
+# to at most one per second. Snakemake 7.32.4 does not apply its own
+# --max-jobs-per-second limit to cluster jobs.
 cluster:
-  sbatch
+  sleep 1;
+    sbatch
     --nodes=1
     --cpus-per-task={threads}
     --mem={params.memory}GB
@@ -28,12 +32,9 @@ cluster:
 # time limits for jobs which need more than the default time
 set-resources:
   - sprot_blastx_parallel:time="12:00:00"
-  - trinity_butterfly_parallel:time="12:00:00"
-  - kallisto:time="12:00:00"
-  - trinity_final:time="2-00:00:00"
   - align_reads:time="3-00:00:00"
-  - rnaspades:time="3-00:00:00"
-  - trinity_inchworm_chrysalis:time="5-00:00:00"
+  - rnaspades:time="1-00:00:00"
+  - trinity:time="7-00:00:00"
 
 default-resources:
   - time="4:00:00"
@@ -45,9 +46,9 @@ default-resources:
 cluster-status: slurm-status.sh
 restart-times: 1
 latency-wait: 60
-# Trinity splits the Butterfly stage into 1000 chunks, so this number is the size
-# of the queue during that stage. Keep it low enough that one node is not filled.
-jobs: 100
+# At most this many jobs in the queue at once, so a run of hundreds of jobs does
+# not flood the scheduler.
+jobs: 50
 rerun-incomplete: True
 conda-frontend: "conda"
 use-conda: True

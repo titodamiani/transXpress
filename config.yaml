@@ -12,9 +12,10 @@ trimmomatic_parameters: "ILLUMINACLIP:adapters.fasta:2:30:10 SLIDINGWINDOW:4:5 L
 # set to trinity or rnaspades
 assembler: "trinity"
 
-# Node-local disk. On a cluster, the rules rnaspades, trinity_butterfly_parallel, kallisto and
-# align_reads can work in a folder on the node's own disk, and copy their files to the run folder
-# when they end. This keeps their working files off the shared network storage.
+# Node-local disk. On a cluster, the rules rnaspades, trinity, kallisto, align_reads and busco work
+# in a folder on the node's own disk, and copy their files to the run folder when they end. Every
+# other job keeps its temporary files there too. This keeps the working files off the shared
+# network storage. rnaspades, trinity, kallisto and align_reads stop when the folder is in memory.
 # Give the environment variable that holds that folder in a cluster job, with its $, for example
 # "$SCRATCH" or "$TMPDIR". Pick one that is on a disk: on some clusters $TMPDIR is in memory.
 # "" runs every rule in the run folder.
@@ -115,21 +116,27 @@ sprot_release: "2026_03"
 # the transcripts (.gff3, .bed): transcriptome_all_orfs.* and transcriptome_single_best_orf.*.
 transdecoder_orfs: "all"
 
+# The number of sequences in each annotation chunk. Each tool runs one cluster job per chunk, and each
+# job reads the whole database, so larger chunks mean fewer jobs and fewer database reads.
+# fasta: the transcripts, for rfam and blastx. A chunk of 1000 takes blastx up to about 2.5 h.
+# orfs: the long ORFs, for pfam and blastp. pep: the proteins, for tmhmm, signalp and targetp.
+# A chunk of 5000 takes each of these tools about 1 h.
+annotation_chunk_fasta: 1000
+annotation_chunk_orfs: 5000
+annotation_chunk_pep: 5000
+
 # Memory in GB and the thread count of the rules whose size follows the dataset.
 # The values here suit about 420 million read pairs, which is 18 Illumina libraries.
-# Lower them for a smaller dataset. A rule that works on a fixed chunk of 1000
-# sequences keeps its size in the Snakefile, because that size holds at any
-# dataset size.
+# Lower them for a smaller dataset. A rule that works on one annotation chunk
+# keeps its size in the Snakefile, because that size holds at any dataset size.
 # Keep the assembler thread count the same across runs you want to compare. The
 # assembly depends on it.
 rnaspades_memory: "400"
 rnaspades_threads: 32
-# The Trinity guide gives about 1 GB per million read pairs. This figure follows
-# that rule of thumb and is not measured.
-trinity_inchworm_chrysalis_memory: "450"
-trinity_inchworm_chrysalis_threads: 16
-trinity_final_memory: "450"
-trinity_final_threads: 16
+# Trinity runs in one job. The Trinity guide gives about 1 GB per million read
+# pairs. This figure follows that rule of thumb and is not measured.
+trinity_memory: "450"
+trinity_threads: 32
 align_reads_memory: "100"
 align_reads_threads: 16
 kallisto_memory: "20"
@@ -138,9 +145,3 @@ busco_memory: "10"
 busco_threads: 16
 transdecoder_predict_memory: "6"
 transdecoder_predict_threads: 1
-
-# Trinity Butterfly runs its commands in chunks, one Slurm job per chunk. A chunk
-# holds at least trinity_butterfly_cmds_per_chunk commands, and there are at most
-# trinity_butterfly_max_chunks chunks.
-trinity_butterfly_cmds_per_chunk: 20
-trinity_butterfly_max_chunks: 1000

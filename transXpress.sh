@@ -26,7 +26,7 @@ fi
 case "$CLUSTER" in
 "LSF")
   echo "Submitting snakemake jobs to LSF cluster"
-  snakemake "${CONDA_PREFIX_ARGS[@]}" --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "bsub -oo {log}.bsub -n {threads} -R rusage[mem={params.memory}000] -R span[hosts=1]" "$@"
+  snakemake "${CONDA_PREFIX_ARGS[@]}" --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 50 --cluster "sleep 1; bsub -oo {log}.bsub -n {threads} -R rusage[mem={params.memory}000] -R span[hosts=1]" "$@"
   ;;
 "SLURM")
   echo "Submitting snakemake jobs to SLURM cluster"
@@ -34,7 +34,7 @@ case "$CLUSTER" in
   ;;
 "PBS")
   echo "Submitting snakemake jobs to PBS/Torque cluster"
-  snakemake "${CONDA_PREFIX_ARGS[@]}" --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 10000 --cluster "qsub -j oe -o {log}.pbs -l select=1:ncpus={threads}:mem={params.memory}gb" "$@"
+  snakemake "${CONDA_PREFIX_ARGS[@]}" --conda-frontend conda --use-conda --latency-wait 60 --restart-times 1 --jobs 50 --cluster "sleep 1; qsub -j oe -o {log}.pbs -l select=1:ncpus={threads}:mem={params.memory}gb" "$@"
   ;;
 *)
   snakemake "${CONDA_PREFIX_ARGS[@]}" --conda-frontend conda --use-conda --cores all "$@"

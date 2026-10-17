@@ -26,76 +26,72 @@ if [ -z "$JOBID" ]; then
   exit 0
 fi
 
-# One squeue call lists every job of this user, so the answer for most jobs comes
-# from this cache instead of a Slurm query. squeue reads the controller's memory;
-# sacct reads the Slurm database and is the expensive one.
-CACHE=".snakemake/slurm-status-cache"
-CACHE_MAX_AGE=60   # seconds a cache file is trusted
-CACHE_MIN_AGE=5    # a miss rebuilds the cache only if it is older than this
+# The answers come from two listings of this user's jobs, each built at most once
+# a minute: squeue for the jobs in the queue, which reads the controller's memory,
+# and sacct for the jobs of the last hour, which reads the Slurm database. So a run
+# of any size costs Slurm at most two calls a minute. The listings sit in the
+# temporary folder of the node, not on the shared file system.
+CACHE_DIR="${TMPDIR:-/tmp}"
+QUEUE_CACHE="$CACHE_DIR/transxpress-slurm-status-$USER.squeue"
+STATE_CACHE="$CACHE_DIR/transxpress-slurm-status-$USER.sacct"
+CACHE_MAX_AGE=60   # seconds a listing is trusted
 
-# First line of the cache is the time it was built, so no stat call is needed.
+# First line of a listing is the time it was built, so no stat call is needed.
 NOW=$(date +%s)
 
 cache_age() {
-  if [ ! -s "$CACHE" ]; then
+  if [ ! -s "$1" ]; then
     echo 999999
     return
   fi
-  BUILT=$(head -1 "$CACHE" 2>/dev/null)
+  BUILT=$(head -1 "$1" 2>/dev/null)
   case "$BUILT" in
     ''|*[!0-9]*) echo 999999 ;;
     *) echo $((NOW - BUILT)) ;;
   esac
 }
 
+# $1 is the listing file, the rest is the Slurm command. A failed command keeps
+# the old listing.
 build_cache() {
-  # -u "$USER" rather than --me, which needs a newer Slurm.
-  QUEUE=$(squeue -h -u "$USER" -o %i 2>/dev/null)
+  CACHE="$1"
+  shift
+  LISTING=$("$@" 2>/dev/null)
   if [ $? -ne 0 ]; then
     return 1
   fi
-  mkdir -p "$(dirname "$CACHE")" 2>/dev/null
   # Write then move, so a reader never sees half a file.
-  { echo "$NOW"; echo "$QUEUE"; } > "$CACHE.$$" 2>/dev/null && mv -f "$CACHE.$$" "$CACHE" 2>/dev/null
+  { echo "$NOW"; echo "$LISTING"; } > "$CACHE.$$" 2>/dev/null && mv -f "$CACHE.$$" "$CACHE" 2>/dev/null
   return 0
 }
 
-in_cache() {
-  # An array task appears as "123_4", so match the plain id and that form.
-  tail -n +2 "$CACHE" 2>/dev/null | grep -qx -e "$JOBID" -e "${JOBID}_[0-9]*"
-}
-
-if [ "$(cache_age)" -gt "$CACHE_MAX_AGE" ]; then
-  build_cache
+# -u "$USER" rather than --me, which needs a newer Slurm.
+if [ "$(cache_age "$QUEUE_CACHE")" -gt "$CACHE_MAX_AGE" ]; then
+  build_cache "$QUEUE_CACHE" squeue -h -u "$USER" -o %i
 fi
 
-if in_cache; then
+# An array task appears as "123_4", so match the plain id and that form.
+if tail -n +2 "$QUEUE_CACHE" 2>/dev/null | grep -qx -e "$JOBID" -e "${JOBID}_[0-9]*"; then
   echo running
   exit 0
 fi
 
-# A job submitted since the cache was built is not in it yet. Rebuild once and
-# look again, so a wave of new jobs costs one squeue call and not one sacct call
-# each.
-if [ "$(cache_age)" -gt "$CACHE_MIN_AGE" ]; then
-  build_cache
-  if in_cache; then
-    echo running
-    exit 0
-  fi
+# The job is not in the queue listing: it has left the queue, or it is newer than
+# the listing. The sacct listing tells the two apart. -X gives the job itself and
+# not its steps.
+if [ "$(cache_age "$STATE_CACHE")" -gt "$CACHE_MAX_AGE" ]; then
+  build_cache "$STATE_CACHE" sacct -X -n -P -u "$USER" -S now-1hours -o JobID,State
 fi
-
-# The job has left the queue, so ask the database for its final state. -X gives
-# the job itself and not its steps.
-STATE=$(sacct -X -n -P -j "$JOBID" -o State 2>/dev/null | head -1)
+STATE=$(tail -n +2 "$STATE_CACHE" 2>/dev/null | awk -F'|' -v id="$JOBID" '$1 == id { print $2; exit }')
 
 # "CANCELLED by 12345" and "CANCELLED+" both mean cancelled.
 STATE="${STATE%% *}"
 STATE="${STATE%+}"
 
 if [ -z "$STATE" ]; then
-  # Slurm did not answer. Treat it as "wait", because a cluster outage is not a
-  # pipeline failure, and the next poll asks again.
+  # The job is in neither listing, so it is newer than both, or Slurm did not
+  # answer. Treat it as "wait", because a cluster outage is not a pipeline
+  # failure, and a later poll asks again.
   echo running
   exit 0
 fi

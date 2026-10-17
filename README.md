@@ -98,6 +98,16 @@ export TRANSXPRESS_CONDA_PREFIX=/path/to/folder
 ~~~~
 snakemake --use-conda --conda-frontend conda --conda-prefix "$TRANSXPRESS_CONDA_PREFIX" --conda-create-envs-only --cores 1
 ~~~~
+On a cluster, build them in a job and not on the shared login node, for example on Slurm:
+~~~~
+sbatch --time=4:00:00 --mem=24G --cpus-per-task=4 -o envs.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate transxpress && snakemake --use-conda --conda-frontend conda --conda-prefix "$TRANSXPRESS_CONDA_PREFIX" --conda-create-envs-only --cores 1'
+~~~~
+The environments of the annotation rules that come after the split checkpoints (rfam and pfam with a shared `db_dir`) are built by the main Snakemake process during the first run.
+When the environments are in place, delete the package caches, which hold a second copy of every package:
+~~~~
+conda clean --all --yes
+pip cache purge
+~~~~
 
 9. Install SignalP 6.0 (fast):
       * Download SignalP 6.0 fast from https://services.healthtech.dtu.dk/services/SignalP-6.0/ (go to Downloads)
@@ -181,7 +191,7 @@ Two rules delete files, and neither runs unless you name it:
 | Rule | Deletes | Keeps |
 |---|---|---|
 | `clean` | `results/` and `logs/` | `config.yaml`, the samples file, `resources/`, `.snakemake/` |
-| `delete_intermediates` | the trimmed reads, the kallisto, bowtie2 and RSEM indexes, and the Trinity working files | every result. A later `snakemake` run in the folder has nothing to do |
+| `delete_intermediates` | the trimmed reads and the kallisto, bowtie2 and RSEM indexes | every result. A later `snakemake` run in the folder has nothing to do |
 
 ~~~
 ./transXpress.sh delete_intermediates
@@ -192,9 +202,9 @@ Two rules delete files, and neither runs unless you name it:
 * Swiss-Prot, Pfam and Rfam have fixed releases, set in `config.yaml`. See [Annotation databases](#annotation-databases).
 * With the default `db_dir: "resources/db"`, BUSCO downloads the newest dataset of its lineage, so BUSCO scores can differ between runs months apart. A shared `db_dir` keeps one lineage dataset for every run.
 * The pipeline reads and writes the paths in [Output layout](#output-layout). A run folder that holds its files at other paths runs every step again, so start each run in its own folder.
-* The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `results/run_info.txt` records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades`, `trinity_inchworm_chrysalis` and `trinity_final` name the machine each one ran on.
+* The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `results/run_info.txt` records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades` and `trinity` name the machine each one ran on.
 * TransDecoder and Trinity each have a Perl script that writes records in Perl hash order, which changes in each run. The TransDecoder rules, `kallisto` and `trinity_stats` set `PERL_HASH_SEED=0`, so two runs write the same records in the same order. Upstream reports: [TransDecoder/TransDecoder#212](https://github.com/TransDecoder/TransDecoder/issues/212), [trinityrnaseq/trinityrnaseq#1478](https://github.com/trinityrnaseq/trinityrnaseq/issues/1478).
-* Trinity does not repeat an assembly, by its own documentation. Its Butterfly stage runs in parallel chunks whose results are collected in the order they finish. Use rnaSPAdes for an assembly that has to be repeatable.
+* Trinity does not repeat an assembly. With more than one thread, its Inchworm step gives a different result in each run from the same reads, so the transcripts differ slightly between two runs. On the test data, 638 of about 648 transcripts are the same in two runs. Use rnaSPAdes for an assembly that has to be repeatable.
 
 ## Running transXpress
 
@@ -212,7 +222,7 @@ snakemake --conda-frontend conda --use-conda --cores 10
 
 Option 3 - run snakemake manually on an LSF cluster:
 ~~~~
-snakemake --conda-frontend conda --use-conda --latency-wait 60 --jobs 10000 --cluster 'bsub -n {threads} -R "rusage[mem={params.memory}000] span[hosts=1]" -oo {log}.bsub'
+snakemake --conda-frontend conda --use-conda --latency-wait 60 --jobs 50 --cluster 'sleep 1; bsub -n {threads} -R "rusage[mem={params.memory}000] span[hosts=1]" -oo {log}.bsub'
 ~~~~
 
 Option 4 - define a profile and run snakemake with the profile:
@@ -225,9 +235,9 @@ The folder `profiles/slurm` holds a profile `config.yaml` for Slurm. You can fin
 
 The main Snakemake process needs the `transxpress` environment. Run it in its own job and activate the environment first. Replace the two paths with yours:
 ~~~
-sbatch --time=5-00:00:00 --mem=4G -o main.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate /path/to/transxpress-env && bash /path/to/transXpress/transXpress.sh'
+sbatch --time=7-00:00:00 --mem=24G -o main.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate /path/to/transxpress-env && bash /path/to/transXpress/transXpress.sh'
 ~~~
-The time is the limit for the whole run.
+The time is the limit for the whole run, so it has to be longer than the longest job: `trinity` asks for 7 days. The main process builds the environments of the annotation rules during the run, and a build needs about 10 GB, so the job asks for 24 GB.
 
 ### Running specific steps
 
@@ -316,22 +326,29 @@ Load them to IGV: File -> Load from File -> select the *results/expression/bowti
 ## Possible problems when executing on cluster systems
 
 ### Time limit
-Slurm jobs need a time limit. The time of each rule is set in `profiles/slurm/config.yaml`: `default-resources` gives 4 hours, and `set-resources` gives longer times to the rules that need them. `transXpress.sh` uses this profile on Slurm clusters.
+Slurm jobs need a time limit. The time of each rule is set in `profiles/slurm/config.yaml`: `default-resources` gives 4 hours, and `set-resources` gives longer times to the rules that need them: `rnaspades` 1 day, `trinity` 7 days, `align_reads` 3 days and `sprot_blastx_parallel` 12 hours. `transXpress.sh` uses this profile on Slurm clusters.
 
-If a job is cancelled because of the time limit, raise the time of that rule in `set-resources`. The time you need depends on the size of the reads used for the assembly.
+If a job is cancelled because of the time limit, raise the time of that rule in `set-resources`, or for one run on the command line, for example `--set-resources trinity:time=2-00:00:00`. The time you need depends on the size of the reads used for the assembly. A job whose time limit reaches into a maintenance of the cluster waits until the maintenance ends, so before a maintenance give the long rules a limit that ends in time.
+
+Many clusters start short jobs sooner. Read the time and the memory a finished job used with `sacct -j <jobid> --format=JobID,State,Elapsed,MaxRSS`, and set the limits a margin above them.
 
 See https://github.com/trinityrnaseq/trinityrnaseq/wiki/Trinity-Computing-Requirements
 
 ### How the pipeline learns that a cluster job stopped
 Snakemake asks the cluster for the state of each job it submitted. Without that, Snakemake waits for the job to write a marker file, and a job stopped by the node, by the kernel or by `scancel` writes no marker. Snakemake then waits for that job for ever, with an empty queue and no error message.
 
-On Slurm, `profiles/slurm/config.yaml` sets `cluster-status: slurm-status.sh`. The script maps the Slurm job state to the three words Snakemake expects. It answers most checks from a `squeue` listing it caches in `.snakemake/slurm-status-cache` for 60 seconds, and asks `sacct` only about a job that has left the queue, which keeps the load on the cluster to about one query per minute.
+On Slurm, `profiles/slurm/config.yaml` sets `cluster-status: slurm-status.sh`. The script maps the Slurm job state to the three words Snakemake expects. It answers every check from two listings of your jobs, a `squeue` listing of the queue and a `sacct` listing of the last hour, each built at most once a minute and kept in the temporary folder of the node. So a run of any size asks Slurm at most two queries a minute. A job in neither listing is newer than both and counts as running.
 
-A state the script does not recognise counts as a failure, so an unknown state stops the job instead of holding up the run. `restart-times` in the same profile then gives the job another try. Five rules set `retries: 0` and get no second try: `rnaspades`, `trinity_inchworm_chrysalis`, `trinity_final`, `kallisto` and `align_reads`. They fail mostly on memory or time, and a retry asks for the same figures and starts from the beginning. When Slurm does not answer at all, the script reports the job as still running, so a cluster outage does not end the run.
+A state the script does not recognise counts as a failure, so an unknown state stops the job and does not hold up the run. `restart-times` in the same profile then gives the job another try. Four rules set `retries: 0` and get no second try: `rnaspades`, `trinity`, `kallisto` and `align_reads`. They fail mostly on memory or time, and a retry asks for the same figures and starts from the beginning. When Slurm does not answer at all, the script reports the job as still running, so a cluster outage does not end the run.
 
 For the job state names, see https://slurm.schedmd.com/sacct.html
 
 On LSF and PBS, `transXpress.sh` passes `--cluster` without a status command, so a job that the cluster stops can still leave Snakemake waiting. Write a status script for your scheduler and pass it with `--cluster-status`.
+
+### Number of jobs
+The profile keeps at most 50 jobs in the queue (`jobs: 50`), and its submit command waits one second before each `sbatch`, so a run does not flood the scheduler. Snakemake 7.32.4 does not apply its own `--max-jobs-per-second` to cluster jobs. `transXpress.sh` gives LSF and PBS the same two limits.
+
+The annotation rules run one job per chunk of sequences and tool. Each job reads the whole database, so larger chunks mean fewer jobs. The chunk sizes are the config keys `annotation_chunk_fasta` (1000 transcripts, for rfam and blastx), `annotation_chunk_orfs` (5000, for pfam and blastp) and `annotation_chunk_pep` (5000, for tmhmm, signalp and targetp). At these sizes a chunk job takes up to about 2.5 hours for blastx and about 1 hour for the others. The merged results follow the order of the sequences at any chunk size.
 
 ### Flags that belong to your cluster
 Some sbatch flags are site specific: a node to avoid, a processor generation to insist on, an account to charge. `profiles/slurm/config.yaml` takes them in two places, and both are empty by default.
@@ -357,7 +374,7 @@ A node name and a partition name usually travel together. The partition a cluste
 Each job needs a time limit, so `--time` stays on the sbatch line and does not belong in either hook.
 
 ### Working files on the node's local disk
-Four rules write many large or short-lived working files: `rnaspades`, `trinity_butterfly_parallel`, `kallisto` and `align_reads`. On a cluster, the run folder usually sits on network storage that all users share, and many clusters ask that such work runs on the node's own disk.
+On a cluster, the run folder usually sits on network storage that all users share, and many clusters ask that work with many or large files runs on the node's own disk.
 
 The `scratch` key in `config.yaml` names the environment variable that holds a folder on the node's local disk in a cluster job, with its `$`:
 ~~~~
@@ -366,19 +383,24 @@ scratch: "$SCRATCH"
 
 Ask your cluster documentation which variable that is. On some clusters `$TMPDIR` is in memory, and a file there counts against the memory of the job. The default `""` runs every rule in the run folder.
 
-With the key set, each of the four rules makes its own folder under that variable, works there, and copies its files to the run folder when it ends:
+With the key set, every job gets that folder as its temporary folder: Snakemake sets `TMPDIR`, `TMP` and `TEMP` of the job to it. `signalp_parallel`, `targetp_parallel` and `tmhmm_parallel` write their work files there. Five rules make their own folder under it, work there, and copy their files to the run folder when they end:
 
 | Rule | Works on the local disk | Copied to the run folder |
 |---|---|---|
 | `rnaspades` | the whole rnaSPAdes output folder | `results/assembly/rnaspades`, which replaces the folder in the run folder |
-| `trinity_butterfly_parallel` | the files of each small assembly, through Trinity's `--workdir` | nothing: Trinity writes the fasta of each assembly to `results/assembly/trinity/read_partitions` itself |
+| `trinity` | the whole Trinity assembly, with its `read_partitions` folder | `results/assembly/trinity.Trinity.fasta` and its `.gene_trans_map` |
 | `kallisto` | the index and the per replicate results | every file, over the files in `results/expression/kallisto` |
 | `align_reads` | the indexes and the per replicate results | every file, over the files in `results/expression/bowtie2_rsem` |
+| `busco` | the BUSCO output folder, whose per-gene folders it packs into two archives | `results/qc/busco`, which replaces the folder in the run folder |
 
-When the variable is not set in a job, for example on a computer without a cluster, the rule works in the run folder.
+Each of these logs names its work folder near the top. When the variable is not set in a job, for example on a computer without a cluster, the rule works in the run folder.
 
-When a rule fails, for example on an error of the tool or when the kernel stops it for lack of memory, it copies its local files to the place the rule writes them without the local disk, so they can be read to find the cause. A job that Slurm stops at its time limit or with `scancel` copies nothing: Slurm ends the Snakemake process of the job at once, and with it every process the job started. A node that crashes leaves nothing either. In all these cases the rule log `logs/<rule>.log` holds the output of the tool up to the stop, and the Slurm log `logs/<rule>.log.slurm` names a time limit.
+`rnaspades`, `trinity`, `kallisto` and `align_reads` stop when the folder is in memory (a `tmpfs` file system), with a message that names the node, because their work files would count against the memory of the job. Exclude such nodes, or set the key to a variable that names a disk.
 
-The local disk of a node is shared by the jobs on it, and a cluster may not reserve disk space for a job. `rnaspades` needed about 120 GB of working files for 9 libraries of about 23 million read pairs each.
+When `rnaspades`, `kallisto` or `align_reads` fails, for example on an error of the tool or when the kernel stops it for lack of memory, it copies its local files to the place the rule writes them without the local disk, so they can be read to find the cause. `trinity` and `busco` copy nothing on a failure: their work files are the many small files to keep off the shared storage, and Snakemake deletes the output folder of a failed `busco` anyway. A job that Slurm stops at its time limit or with `scancel` copies nothing: Slurm ends the Snakemake process of the job at once, and with it every process the job started. A node that crashes leaves nothing either. In all these cases the rule log `logs/<rule>.log` holds the output of the tool up to the stop, and the Slurm log `logs/<rule>.log.slurm` names a time limit.
+
+The local disk of a node is shared by the jobs on it, and a cluster may not reserve disk space for a job. `rnaspades` needed about 120 GB of working files for 9 libraries of about 23 million read pairs each. `trinity` needed 62 GB and wrote 124,280 files in `read_partitions` for one library of 23.8 million read pairs.
+
+Without the local disk, `trinity` works in `results/assembly/trinity`, and a run after a failure continues from Trinity's own checkpoints there. `--full_cleanup` deletes that folder after a successful assembly.
 
 `rnaspades` runs without `--checkpoints`. On the local disk, the folder is deleted at the end of the job, so a restart point would not survive.

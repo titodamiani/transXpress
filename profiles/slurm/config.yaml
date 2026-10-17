@@ -29,10 +29,9 @@ cluster:
 set-resources:
   - sprot_blastx_parallel:time="12:00:00"
   - trinity_butterfly_parallel:time="12:00:00"
-  - kallisto:time="12:00:00"
   - trinity_final:time="2-00:00:00"
   - align_reads:time="3-00:00:00"
-  - rnaspades:time="3-00:00:00"
+  - rnaspades:time="1-00:00:00"
   - trinity_inchworm_chrysalis:time="5-00:00:00"
 
 default-resources:
@@ -45,9 +44,10 @@ default-resources:
 cluster-status: slurm-status.sh
 restart-times: 1
 latency-wait: 60
-# Trinity splits the Butterfly stage into 1000 chunks, so this number is the size
-# of the queue during that stage. Keep it low enough that one node is not filled.
-jobs: 100
+# At most this many jobs in the queue at once, submitted at most one per second,
+# so a run of hundreds of jobs does not flood the scheduler.
+jobs: 50
+max-jobs-per-second: 1
 rerun-incomplete: True
 conda-frontend: "conda"
 use-conda: True

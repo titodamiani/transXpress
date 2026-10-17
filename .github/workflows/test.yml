@@ -43,7 +43,7 @@ jobs:
           cp config.yaml db-fill/
           cd db-fill
           snakemake --profile ../profiles/local --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 2 download_databases \
-            --config pfam_release="$PFAM_RELEASE" rfam_release="$RFAM_RELEASE" sprot_release="$SPROT_RELEASE" lineage="$LINEAGE"
+            --config pfam_release="'$PFAM_RELEASE'" rfam_release="'$RFAM_RELEASE'" sprot_release="'$SPROT_RELEASE'" lineage="$LINEAGE"
           cat resources/db/versions.txt
       - name: Upload the logs
         if: failure()

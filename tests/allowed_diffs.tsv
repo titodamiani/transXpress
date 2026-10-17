@@ -6,10 +6,11 @@ results/assembly/rnaspades/K*/configs/config.info	strip:^tmp_dir 	rnaSPAdes name
 results/assembly/rnaspades/K*/final.lib_data	strip:^[^\n]{0,4}---$	the first bytes give the length of the text after them, which holds the run folder path
 results/assembly/rnaspades/run_spades.yaml	strip:job_uuid:|tmp/spades_	rnaSPAdes writes a random job ID and names its temporary folder at random
 results/assembly/rnaspades/spades.log	skip	every line starts with the run time
+results/assembly/trinity.Trinity.fasta*	skip	Trinity writes the same records in another order in each run; transcriptome.fasta holds them sorted by name
 results/expression/kallisto/*/abundance.h5	skip	the HDF5 file holds the start time of kallisto
 results/expression/kallisto/*/run_info.json	strip:"start_time":	kallisto writes its start time
 results/qc/busco/logs/*	skip	the logs hold memory addresses, speeds and random folder names
-results/qc/busco/run_viridiplantae_odb12/*.tar.gz	skip	the tar archive holds the file times
+results/qc/busco/run_viridiplantae_odb12/hmmer_output.tar.gz	skip	the hmmsearch tables in the archive hold the date and the options of the run, and BUSCO's .checkpoint file holds its times
 results/qc/busco/run_viridiplantae_odb12/metaeuk_output/*	skip	BUSCO writes the hits in another order and with a random ID, and the lines are the same after sorting
 results/qc/fastqc_*_trim/*_fastqc.zip	skip	the zip archive holds the file times; multiqc_fastqc.txt holds the table
 results/qc/multiqc_*_trim/multiqc_data/multiqc.log	skip	the log holds the temporary folder of the job

@@ -1,3 +1,4 @@
+import functools
 import os
 import sys
 import shutil
@@ -6,7 +7,8 @@ import csv
 import Bio.SeqIO
 import subprocess
 import tempfile
-from snakemake.utils import min_version
+from snakemake.exceptions import WorkflowError
+from snakemake.utils import min_version, validate
 from Bio.Seq import Seq
 import pandas as pd
 
@@ -14,54 +16,38 @@ min_version("5.4.1")
 
 configfile: "config.yaml"
 
+validate(config, os.path.join(workflow.basedir, "schemas", "config.schema.yaml"), set_default=True)
+
 # The releases of the annotation databases. The download rules fetch exactly these releases.
-PFAM_RELEASE = str(config.get("pfam_release", "38.2"))
-RFAM_RELEASE = str(config.get("rfam_release", "15.1"))
-SPROT_RELEASE = str(config.get("sprot_release", "2026_03"))
-if not re.fullmatch(r"\d{4}_\d{2}", SPROT_RELEASE):
-  raise ValueError("sprot_release must look like \"2026_03\", in quotes. The config gives %s" % SPROT_RELEASE)
+PFAM_RELEASE = config["pfam_release"]
+RFAM_RELEASE = config["rfam_release"]
+SPROT_RELEASE = config["sprot_release"]
 
 # The adapter file that ships with transXpress. {adapters} in trimmomatic_parameters stands for its path.
 ADAPTERS = os.path.normpath(os.path.join(workflow.basedir, "..", "resources", "adapters.fasta"))
-TRIMMOMATIC_PARAMETERS = str(config["trimmomatic_parameters"]).replace("{adapters}", ADAPTERS)
+
+def trimmomatic_parameters(wildcards):
+  return str(config["trimmomatic_parameters"]).replace("{adapters}", ADAPTERS)
 
 # The ORF set that transcriptome.pep holds and the downstream rules read. Both sets are always saved.
-TRANSDECODER_ORFS = str(config.get("transdecoder_orfs", "all"))
-if TRANSDECODER_ORFS not in ["all", "single_best"]:
-  raise ValueError("transdecoder_orfs must be \"all\" or \"single_best\". The config gives %s" % TRANSDECODER_ORFS)
+TRANSDECODER_ORFS = config["transdecoder_orfs"]
 TRANSDECODER_ORFS_FILE = {"all": "results/transdecoder/transcriptome_all_orfs.pep", "single_best": "results/transdecoder/transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
 
 # The rnaSPAdes transcript set that becomes transcriptome.fasta. rnaSPAdes always writes all three.
-RNASPADES_FILTER = str(config.get("rnaspades_filter", "default"))
-if RNASPADES_FILTER not in ["default", "hard", "soft"]:
-  raise ValueError("rnaspades_filter must be \"default\", \"hard\" or \"soft\". The config gives %s" % RNASPADES_FILTER)
+RNASPADES_FILTER = config["rnaspades_filter"]
 
-# The organism group that SignalP predicts signal peptides for. "" turns SignalP off.
+# The organism groups of SignalP and TargetP. "" turns the tool off.
 # A key with no value reaches here as None, which means "" too
-SIGNALP_ORGANISM = str(config.get("signalp", "eukarya") or "")
-if SIGNALP_ORGANISM not in ["", "eukarya", "other"]:
-  raise ValueError("signalp must be \"eukarya\", \"other\" or \"\". The config gives %s" % SIGNALP_ORGANISM)
-
-# The organism group that TargetP predicts targeting peptides for. "" turns TargetP off.
-TARGETP_ORGANISM = str(config.get("targetp", "non-pl") or "")
-if TARGETP_ORGANISM not in ["", "pl", "non-pl"]:
-  raise ValueError("targetp must be \"pl\", \"non-pl\" or \"\". The config gives %s" % TARGETP_ORGANISM)
+SIGNALP_ORGANISM = config["signalp"] or ""
+TARGETP_ORGANISM = config["targetp"] or ""
 
 # The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
-ANNOTATION_CHUNK = {}
-for chunk_split, chunk_default in [("fasta", 1000), ("orfs", 5000), ("pep", 5000)]:
-  chunk_value = config.get("annotation_chunk_" + chunk_split, chunk_default)
-  if isinstance(chunk_value, bool) or not isinstance(chunk_value, int) or chunk_value < 1:
-    raise ValueError("annotation_chunk_%s must be a whole number above 0. The config gives %s" % (chunk_split, chunk_value))
-  ANNOTATION_CHUNK[chunk_split] = chunk_value
+ANNOTATION_CHUNK = {split: config["annotation_chunk_" + split] for split in ["fasta", "orfs", "pep"]}
 
 # The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH".
 # "" runs every rule in the run folder. The heavy rules read the variable with bash, inside the job,
 # because only the job knows its value.
-# A key with no value reaches here as None, which means "" too
-SCRATCH = str(config.get("scratch") or "")
-if SCRATCH and not re.fullmatch(r"\$[A-Za-z_][A-Za-z0-9_]*", SCRATCH):
-  raise ValueError("scratch must be \"\" or one environment variable with its $, for example \"$SCRATCH\". The config gives %s" % SCRATCH)
+SCRATCH = config["scratch"] or ""
 SCRATCH_VAR = SCRATCH[1:]
 # The shell functions that the heavy rules use to work in that folder
 SCRATCH_SH = os.path.join(workflow.basedir, "scripts", "scratch.sh")
@@ -75,9 +61,9 @@ def job_tmpdir(wildcards):
 
 # The folder of the annotation databases. "resources/db" keeps one copy in each run folder, which the
 # pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
-DB_DIR = str(config.get("db_dir", "resources/db")).rstrip("/")
+DB_DIR = config["db_dir"].rstrip("/")
 DB_SHARED = DB_DIR != "resources/db"
-LINEAGE = config.get("lineage", "")
+LINEAGE = config["lineage"] or ""
 
 # The annotation rules run only after the fasta_split checkpoints, hours into a run, so a
 # shared folder is checked here, before any job starts.

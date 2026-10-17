@@ -40,6 +40,7 @@ jobs:
         shell: bash -el {0}
         run: |
           mkdir -p db-fill
+          cp config.yaml db-fill/
           cd db-fill
           snakemake --snakefile ../workflow/Snakefile --use-conda --conda-frontend conda \
             --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 2 download_databases \

@@ -1,10 +1,44 @@
+@functools.lru_cache(maxsize=None)
+def check_samples(path):
+  """
+  Checks the samples file before any job starts. Every line that is not empty has 3 columns (sample,
+  replicate and one reads file) or 4 columns (a second reads file), separated by white space. A replicate
+  name appears once, and every reads file exists.
+  """
+  if not os.path.isfile(path):
+    raise WorkflowError("The samples file %s does not exist. samples_file in config.yaml names it." % path)
+  problems = []
+  replicates = {}
+  with open(path) as handle:
+    for number, line in enumerate(handle, 1):
+      fields = line.split()
+      if not fields:
+        continue
+      if len(fields) not in (3, 4):
+        problems.append("line %d has %d columns, and it needs 3 or 4" % (number, len(fields)))
+        continue
+      if fields[1] in replicates:
+        problems.append("line %d repeats the replicate name %s of line %d" % (number, fields[1], replicates[fields[1]]))
+      replicates.setdefault(fields[1], number)
+      for reads in fields[2:]:
+        if not os.path.isfile(reads):
+          problems.append("line %d: the reads file %s does not exist" % (number, reads))
+  if problems:
+    raise WorkflowError("The samples file %s has problems:\n  %s" % (path, "\n  ".join(problems)))
+  return path
+
+
+def checked_samples_file(wildcards):
+  return check_samples(config["samples_file"])
+
+
 checkpoint trimmomatic_split:
   """
   Splits file with information about all reads files into separate files
   so they can be processed with trimmomatic in parallel.
   """   
   input:
-    samples=config["samples_file"]
+    samples=checked_samples_file
   output:
     directory("results/trimmomatic/reads")
   log:
@@ -30,7 +64,7 @@ rule trimmomatic_parallel:
     "../envs/trimmomatic.yaml"
   params:
     memory="4",
-    trimmomatic=TRIMMOMATIC_PARAMETERS
+    trimmomatic=trimmomatic_parameters
   threads:
     8
   shell:

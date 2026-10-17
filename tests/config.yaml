@@ -31,6 +31,10 @@ trinity_parameters: "--seqType fq"
 # set the organism (plant or non-plant) for targetp: pl or non-pl
 targetp: "non-pl"
 
+# An Apptainer image (.sif) for SignalP or TargetP. "" uses the conda env. See config.yaml.
+signalp_container: ""
+targetp_container: ""
+
 # Strand-specific RNA-Seq read orientation.
 # if paired: RF or FR,
 # if single: F or R.   (dUTP method = RF)

@@ -8,6 +8,7 @@ import Bio.SeqIO
 import subprocess
 import tempfile
 from snakemake.exceptions import WorkflowError
+from snakemake.settings.types import DeploymentMethod
 from snakemake.utils import min_version, validate
 from Bio.Seq import Seq
 import pandas as pd
@@ -51,6 +52,22 @@ RNASPADES_FILTER = config["rnaspades_filter"]
 # A key with no value reaches here as None, which means "" too
 SIGNALP_ORGANISM = config["signalp"] or ""
 TARGETP_ORGANISM = config["targetp"] or ""
+
+# The Apptainer images of SignalP and TargetP. "" runs the tool in its conda env. A rule with an image
+# has no conda env, because Snakemake would activate the conda env inside the image.
+def tool_container(key, organism):
+  path = config[key] or ""
+  if not path or not organism:
+    return ""
+  path = os.path.abspath(path)
+  if not os.path.isfile(path):
+    raise ValueError("%s: no such file: %s" % (key, path))
+  if DeploymentMethod.APPTAINER not in workflow.deployment_settings.deployment_method:
+    raise ValueError("%s is set, so the run needs --software-deployment-method conda apptainer" % key)
+  return path
+
+SIGNALP_CONTAINER = tool_container("signalp_container", SIGNALP_ORGANISM)
+TARGETP_CONTAINER = tool_container("targetp_container", TARGETP_ORGANISM)
 
 # The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
 ANNOTATION_CHUNK = {split: config["annotation_chunk_" + split] for split in ["fasta", "orfs", "pep"]}

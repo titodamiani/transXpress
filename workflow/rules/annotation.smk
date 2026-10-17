@@ -197,8 +197,11 @@ rule signalp_parallel:
     "results/annotation/chunks/signalp/{index}.out"
   log:
     "logs/signalp_parallel/{index}.log"
+  # the image of the signalp_container key, or the conda env "signalp" when the key is ""
   conda:
-    "signalp"
+    None if SIGNALP_CONTAINER else "signalp"
+  container:
+    SIGNALP_CONTAINER or None
   params:
     organism=SIGNALP_ORGANISM
   threads:
@@ -228,8 +231,11 @@ rule targetp_parallel:
     "results/annotation/chunks/targetp/{index}.out"
   log:
     "logs/targetp_parallel/{index}.log"
+  # the image of the targetp_container key, or the conda env "targetp" when the key is ""
   conda:
-    "targetp"
+    None if TARGETP_CONTAINER else "targetp"
+  container:
+    TARGETP_CONTAINER or None
   threads:
     1
   resources:

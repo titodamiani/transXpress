@@ -59,7 +59,9 @@ with open(log[0], "w") as log_handle:
       if (line.startswith("#")): continue
       row = re.split(" +", line, 17)
       if (len(row) < 18): continue
-      rfam_annotations[row[2]] = row[1] + " " + row[17] + "E=" + str(row[15])
+      # cmscan lists the hits of each transcript from the best one down, so the first hit is kept
+      if row[2] not in rfam_annotations:
+        rfam_annotations[row[2]] = row[1] + " " + row[17] + "E=" + str(row[15])
   
   ## Load tmhmm results
   print ("Loading tmhmm predictions from", input["tmhmm_results"], file=log_handle)

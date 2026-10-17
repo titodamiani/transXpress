@@ -20,6 +20,7 @@ default-resources:
   # d035 kills every job, and on d001 $SCRATCH is in RAM
   slurm_extra: "'--exclude=d001,d035'"
 
+# A --config on the command line replaces this list, so add scratch=SCRATCH to it.
 config:
   # The heavy rules work in the job's folder on the node's local disk, $SCRATCH. The name goes without
   # its $, because the sbatch line passes it through a shell, which would put in the main job's folder.

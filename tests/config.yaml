@@ -59,7 +59,8 @@ annotation_chunk_pep: 5000
 # the repository config.yaml sets for 18 libraries.
 rnaspades_memory: "300"
 rnaspades_threads: 16
-trinity_memory: "200"
+# Trinity passes the memory to samtools sort, so it must fit the computer (a GitHub runner has 16 GB)
+trinity_memory: "8"
 trinity_threads: 16
 align_reads_memory: "100"
 align_reads_threads: 16

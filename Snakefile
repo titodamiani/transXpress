@@ -54,6 +54,13 @@ if SCRATCH and not re.fullmatch(r"\$[A-Za-z_][A-Za-z0-9_]*", SCRATCH):
   raise ValueError("scratch must be \"\" or one environment variable with its $, for example \"$SCRATCH\". The config gives %s" % SCRATCH)
 SCRATCH_VAR = SCRATCH[1:]
 
+def job_tmpdir(wildcards):
+  """
+  The temporary folder of a job: the folder in the variable that the scratch key names, or the
+  system default when the key is "" or the variable is not set. Snakemake calls this inside the job.
+  """
+  return (os.environ.get(SCRATCH_VAR, "") if SCRATCH_VAR else "") or tempfile.gettempdir()
+
 # The folder of the annotation databases. "resources/db" keeps one copy in each run folder, which the
 # pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
 DB_DIR = str(config.get("db_dir", "resources/db")).rstrip("/")
@@ -957,6 +964,12 @@ rule rnaspades:
     SCRATCH_VAR="{params.scratch_var}"
     LOCAL_ROOT=""
     if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
+    # work files, so it stops there
+    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
+      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a {log} >&2
+      exit 1
+    fi
     if [ -n "$LOCAL_ROOT" ]; then
       RUN=$(pwd)
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
@@ -1083,11 +1096,29 @@ rule busco:
     memory=config.get("busco_memory", "10"),
     lineage=LINEAGE,
     # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
-    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else "--download_path resources/busco_downloads"
+    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else "--download_path resources/busco_downloads",
+    scratch_var=SCRATCH_VAR
   threads:
     config.get("busco_threads", 16)
   shell:
     """
+    # BUSCO writes thousands of small files. When the scratch key names a variable that is set in this
+    # job, it works in a folder on the node's local disk, packs the per-gene folders there and copies its
+    # output folder to the run folder at the end. Otherwise it works in the run folder. A failed run copies
+    # nothing, because Snakemake deletes the output folder of a failed job; BUSCO's messages are in {log}.
+    OUT={output.out_directory}
+    BUSCO_PATH=$(dirname $OUT)
+    SCRATCH_VAR="{params.scratch_var}"
+    LOCAL_ROOT=""
+    if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    : > {log}
+    if [ -n "$LOCAL_ROOT" ]; then
+      WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
+      BUSCO_PATH=$WORK
+      echo "work folder: $WORK" &>> {log}
+      trap 'rm -rf "$WORK"' EXIT
+    fi
+
     # an empty or missing lineage lets BUSCO choose the lineage automatically
     if [ -z "{params.lineage}" ]; then
       lineage_option="--auto-lineage"
@@ -1096,19 +1127,27 @@ rule busco:
     fi
 
     # -o takes a folder name and --out_path the folder that holds it
-    busco -m transcriptome -i {input.transcriptome} -o $(basename {output.out_directory}) --out_path $(dirname {output.out_directory}) $lineage_option -c {threads} {params.download_option} &> {log}
+    busco -m transcriptome -i {input.transcriptome} -o $(basename $OUT) --out_path $BUSCO_PATH $lineage_option -c {threads} {params.download_option} &>> {log}
     echo "BUSCO run completed successfully" &>> {log}
 
-    # with --auto-lineage BUSCO also writes a short_summary.generic.* file, the report is the specific one
-    cp {output.out_directory}/short_summary.specific.*.txt {output.report} &>> {log}
-
     # pack the per-gene folders (thousands of small files) into one archive each
-    for d in {output.out_directory}/run_*/busco_sequences {output.out_directory}/run_*/hmmer_output; do
+    for d in $BUSCO_PATH/$(basename $OUT)/run_*/busco_sequences $BUSCO_PATH/$(basename $OUT)/run_*/hmmer_output; do
       if [ -d "$d" ]; then
         tar -czf "$d.tar.gz" -C "$(dirname "$d")" "$(basename "$d")" &>> {log}
         rm -rf "$d" &>> {log}
       fi
     done
+
+    if [ -n "$LOCAL_ROOT" ]; then
+      SIZE=$(du -sh "$WORK" | cut -f1)
+      START=$(date +%s)
+      rm -rf $OUT &>> {log}
+      cp -rp $WORK/$(basename $OUT) $(dirname $OUT)/ &>> {log}
+      echo "copied $SIZE from $WORK to $OUT in $(( $(date +%s) - START )) s" &>> {log}
+    fi
+
+    # with --auto-lineage BUSCO also writes a short_summary.generic.* file, the report is the specific one
+    cp $OUT/short_summary.specific.*.txt {output.report} &>> {log}
     """
 
 rule transdecoder_longorfs:
@@ -1299,6 +1338,12 @@ checkpoint align_reads:
     SCRATCH_VAR="{params.scratch_var}"
     LOCAL_ROOT=""
     if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
+    # work files, so it stops there
+    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
+      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a "$LOG" >&2
+      exit 1
+    fi
     if [ -n "$LOCAL_ROOT" ]; then
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
       echo "work folder: $WORK" &>> "$LOG"
@@ -1768,8 +1813,11 @@ rule tmhmm_parallel:
   run:
     # open the input file, output file and log file
     # tmhmm.py writes its result files into the current directory, so each chunk works in its own temporary directory
-    # the temporary directory and the per-protein files in it are deleted when the chunk is done
-    with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory() as tmp_dir:
+    # in the job's temporary folder (see job_tmpdir). The directory and the per-protein files in it are deleted when
+    # the chunk is done
+    with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory(dir=job_tmpdir(wildcards)) as tmp_dir:
+      log_handle.write("work folder: " + tmp_dir + "\n")
+      log_handle.flush()
 
       # iterate through individual sequences in input file, tmhmm.py can be executed with just one sequence at a time
       for record in Bio.SeqIO.parse(input_handle, "fasta"):
@@ -1844,9 +1892,11 @@ rule signalp_parallel:
     1
   shell:
     """
-    TMP=results/annotation/chunks/tmp/signalp_{wildcards.index}
-    signalp6 --fastafile {input} --organism {params.organism} --output_dir $TMP --format none --mode fast &> {log}
-    mv $TMP/prediction_results.txt {output}
+    # Snakemake sets TMPDIR to the job's temporary folder, see job_tmpdir
+    TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/signalp.XXXXXX")
+    echo "work folder: $TMP" &> {log}
+    signalp6 --fastafile {input} --organism {params.organism} --output_dir $TMP/out --format none --mode fast &>> {log}
+    mv $TMP/out/prediction_results.txt {output}
     rm -r $TMP
     """
 
@@ -1869,12 +1919,16 @@ rule targetp_parallel:
     1
   shell:
     """
-    # targetp writes its result into the folder it runs in
+    # targetp writes its result into the folder it runs in, which is the job's temporary folder
+    # (Snakemake sets TMPDIR, see job_tmpdir)
     RUN=$(pwd)
-    mkdir -p results/annotation/chunks/tmp
-    cd results/annotation/chunks/tmp
-    targetp -fasta "$RUN/{input}" -format short -org {config[targetp]} -prefix targetp_{wildcards.index} &> "$RUN/{log}"
+    TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/targetp.XXXXXX")
+    echo "work folder: $TMP" &> "$RUN/{log}"
+    cd $TMP
+    targetp -fasta "$RUN/{input}" -format short -org {config[targetp]} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
     mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}" &>> "$RUN/{log}"
+    cd "$RUN"
+    rm -r $TMP
     """
 
 
@@ -1924,6 +1978,12 @@ rule kallisto:
     SCRATCH_VAR="{params.scratch_var}"
     LOCAL_ROOT=""
     if [ -n "$SCRATCH_VAR" ]; then LOCAL_ROOT="${{!SCRATCH_VAR:-}}"; fi
+    # A scratch folder in RAM (tmpfs) counts against the memory of the job, and this rule writes large
+    # work files, so it stops there
+    if [ -n "$LOCAL_ROOT" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
+      echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a "$LOG" >&2
+      exit 1
+    fi
     if [ -n "$LOCAL_ROOT" ]; then
       WORK=$(mktemp -d "$LOCAL_ROOT/transxpress.XXXXXX")
       echo "work folder: $WORK" &>> "$LOG"
@@ -2379,3 +2439,8 @@ rule annotated_fasta:
           csv_writer.writerow(row)
 
 
+# Every job gets its temporary folder (TMPDIR, TMP and TEMP) from job_tmpdir, so the temporary files of
+# the tools go to the node's local disk when the scratch key is set. Snakemake evaluates the tmpdir
+# resource inside the job, where the variable is set.
+for workflow_rule in workflow.rules:
+  workflow_rule.resources["tmpdir"] = job_tmpdir

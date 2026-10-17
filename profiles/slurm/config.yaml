@@ -1,54 +1,24 @@
-# profile config.yaml for a slurm cluster
-# The cluster picks the partition from the time and memory of each job.
-# If your cluster needs a partition name, add --partition=<name> to the sbatch line below.
+# Snakemake profile for a Slurm cluster, with snakemake-executor-plugin-slurm.
+# Run in a run folder: snakemake --profile /path/to/transXpress/profiles/slurm
 #
-# Two places take flags that belong to one cluster and not to the pipeline.
-# TRANSXPRESS_SBATCH_EXTRA applies to every job of a run, for example
-#   export TRANSXPRESS_SBATCH_EXTRA="--constraint=gen-d --exclude=badnode1"
-# An assembly that is to be compared with another one needs the same CPU on both
-# runs, so a constraint that names the processor generation belongs here.
-# The extra resource applies to one rule, through set-resources below, for example
-#   - rnaspades:extra=--nodelist=node42 --partition=bigmem
-# Write that value without quotes. Quotes stay part of the value, so sbatch reads
-# two flags as one and rejects them.
-# Snakemake formats the sbatch line before a shell sees it, so a brace that the
-# shell has to read is written twice.
+# Each rule gives its threads and its mem_mb and runtime resources. config.yaml sets them for the
+# rules whose size follows the dataset. The plugin turns them into the sbatch flags --cpus-per-task,
+# --mem and --time, and the cluster picks the partition from them.
+#
+# Flags that belong to one cluster go in a copy of this folder, see profiles/aurum:
+#   default-resources: constraint, slurm_partition, slurm_account, slurm_extra (all jobs)
+#   set-resources: the same for one rule
+# A text value there needs two pairs of quotes, for example slurm_extra: "'--exclude=node1'".
+# slurm_extra cannot hold a flag that the plugin sets itself, such as --constraint or --time.
 
-# Snakemake submits the jobs one after another, so the sleep keeps the submissions
-# to at most one per second. Snakemake 7.32.4 does not apply its own
-# --max-jobs-per-second limit to cluster jobs.
-cluster:
-  sleep 1;
-    sbatch
-    --nodes=1
-    --cpus-per-task={threads}
-    --mem={params.memory}GB
-    --time={resources.time}
-    -o {log}.slurm
-    --parsable
-    {resources.extra}
-    ${{TRANSXPRESS_SBATCH_EXTRA:-}}
-
-# time limits for jobs which need more than the default time
-set-resources:
-  - sprot_blastx_parallel:time="12:00:00"
-  - align_reads:time="3-00:00:00"
-  - rnaspades:time="1-00:00:00"
-  - trinity:time="7-00:00:00"
-
-default-resources:
-  - time="4:00:00"
-  # no extra sbatch flags unless a rule asks for them in set-resources
-  - extra=""
-# Asks Slurm for the state of each job. Without it, Snakemake waits for the job
-# to write a marker file, and a job killed by the node writes none.
-# Snakemake looks for the script next to this file.
-cluster-status: slurm-status.sh
-restart-times: 1
-latency-wait: 60
-# At most this many jobs in the queue at once, so a run of hundreds of jobs does
-# not flood the scheduler.
+executor: slurm
+software-deployment-method: conda
+# found next to this folder, so the profile works from any run folder
+snakefile: ../../workflow/Snakefile
+# At most this many jobs in the queue at once, and at most one submission per second, so a run of
+# thousands of jobs does not flood the scheduler.
 jobs: 50
-rerun-incomplete: True
-conda-frontend: "conda"
-use-conda: True
+max-jobs-per-timespan: "1/1s"
+latency-wait: 60
+restart-times: 1
+rerun-incomplete: true

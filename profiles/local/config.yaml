@@ -1,0 +1,8 @@
+# Snakemake profile for one computer, for example a laptop or a single cluster node.
+# Run in a run folder: snakemake --profile /path/to/transXpress/profiles/local
+# The rules run with at most the computer's cores. A rule that asks for more threads gets fewer.
+
+cores: all
+software-deployment-method: conda
+snakefile: ../../workflow/Snakefile
+rerun-incomplete: true

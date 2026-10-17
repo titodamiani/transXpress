@@ -1,0 +1,16 @@
+# transXpress: RNA-Seq de novo assembly and annotation. Run it in a run folder that holds config.yaml and a
+# samples file: snakemake --snakefile ../workflow/Snakefile
+include: "rules/common.smk"
+include: "rules/databases.smk"
+include: "rules/trim.smk"
+include: "rules/qc.smk"
+include: "rules/assembly.smk"
+include: "rules/orfs.smk"
+include: "rules/expression.smk"
+include: "rules/annotation.smk"
+
+# Every job gets its temporary folder (TMPDIR, TMP and TEMP) from job_tmpdir, so the temporary files of
+# the tools go to the node's local disk when the scratch key is set. Snakemake evaluates the tmpdir
+# resource inside the job, where the variable is set.
+for workflow_rule in workflow.rules:
+  workflow_rule.resources["tmpdir"] = job_tmpdir

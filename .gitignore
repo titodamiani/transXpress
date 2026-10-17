@@ -1,5 +1,5 @@
 # Output of a run, for example a test run in tests/
 results/
 logs/
-resources/
+/*/resources/
 .snakemake/

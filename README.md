@@ -284,7 +284,7 @@ This is the default, `db_dir: "resources/db"`. Each run folder downloads its own
    mkdir -p /path/to/databases/pfam38.2_rfam15.1_sprot2026_03
    cd /path/to/databases/pfam38.2_rfam15.1_sprot2026_03
    cp /path/to/transXpress/config.yaml .
-   /path/to/transXpress/transXpress.sh --snakefile /path/to/transXpress/Snakefile download_databases
+   /path/to/transXpress/transXpress.sh --snakefile /path/to/transXpress/workflow/Snakefile download_databases
    ~~~
    The copied `config.yaml` sets the releases and the BUSCO `lineage`. The databases go to `resources/db/`. `resources/db/versions.txt` lists each release and the date of the BUSCO lineage dataset. Cite these in a paper.
 

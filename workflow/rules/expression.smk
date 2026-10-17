@@ -175,17 +175,9 @@ rule trinity_DE:
     """
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
 
-
-    num_replicates=`awk '{{print $2}}' {input.samples} | sort | uniq | wc -l` &> {log}
-    num_samples=`awk '{{print $1}}' {input.samples} | sort | uniq | wc -l` &>> {log}
-    num_replicates_minus_samples=$((num_replicates - num_samples)) &>> {log}
-    if [ $num_replicates_minus_samples -gt 1 ] &>> {log}
-    then &>> {log}
-	    $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} &>> {log}
-    else &>> {log}
-	    echo "No biological replicates to run proper differential expression analysis, last-resorting to edgeR with --dispersion 0.1" &>> {log}
-      $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} --dispersion {config[dispersion]} &>> {log}
-    fi &>> {log}
+    # run_DE_analysis.pl estimates the dispersion for each pair of samples in which both samples have
+    # more than one replicate, and uses --dispersion for a pair in which a sample has one replicate
+    $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} --dispersion {config[dispersion]} &> {log}
     """
 
 

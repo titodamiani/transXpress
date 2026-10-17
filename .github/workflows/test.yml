@@ -32,7 +32,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-version: latest
-          environment-file: envs/default.yaml
+          environment-file: workflow/envs/default.yaml
           activate-environment: transxpress
           conda-remove-defaults: true
       - name: Fill the database folder
@@ -42,8 +42,7 @@ jobs:
           mkdir -p db-fill
           cp config.yaml db-fill/
           cd db-fill
-          snakemake --snakefile ../workflow/Snakefile --use-conda --conda-frontend conda \
-            --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 2 download_databases \
+          snakemake --profile ../profiles/local --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 2 download_databases \
             --config pfam_release="$PFAM_RELEASE" rfam_release="$RFAM_RELEASE" sprot_release="$SPROT_RELEASE" lineage="$LINEAGE"
           cat resources/db/versions.txt
       - name: Upload the logs
@@ -71,11 +70,11 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: conda-envs
-          key: conda-envs-${{ hashFiles('envs/*.yaml') }}
+          key: conda-envs-${{ hashFiles('workflow/envs/*.yaml') }}
       - uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-version: latest
-          environment-file: envs/default.yaml
+          environment-file: workflow/envs/default.yaml
           activate-environment: transxpress
           conda-remove-defaults: true
       - name: Run T1 twice
@@ -83,7 +82,7 @@ jobs:
         run: |
           for run in a b; do
             tests/make_run.sh "t1-${{ matrix.assembler }}-$run" "${{ matrix.assembler }}" "$GITHUB_WORKSPACE/db-fill/resources/db"
-            (cd "t1-${{ matrix.assembler }}-$run" && snakemake --snakefile ../workflow/Snakefile --use-conda --conda-frontend conda \
+            (cd "t1-${{ matrix.assembler }}-$run" && snakemake --profile ../profiles/local \
               --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 4)
           done
       - name: Compare the two runs

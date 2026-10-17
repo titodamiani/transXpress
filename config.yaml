@@ -12,9 +12,10 @@ trimmomatic_parameters: "ILLUMINACLIP:adapters.fasta:2:30:10 SLIDINGWINDOW:4:5 L
 # set to trinity or rnaspades
 assembler: "trinity"
 
-# Node-local disk. On a cluster, the rules rnaspades, trinity_butterfly_parallel, kallisto and
-# align_reads can work in a folder on the node's own disk, and copy their files to the run folder
-# when they end. This keeps their working files off the shared network storage.
+# Node-local disk. On a cluster, the rules rnaspades, trinity, kallisto, align_reads and busco work
+# in a folder on the node's own disk, and copy their files to the run folder when they end. Every
+# other job keeps its temporary files there too. This keeps the working files off the shared
+# network storage. rnaspades, trinity, kallisto and align_reads stop when the folder is in memory.
 # Give the environment variable that holds that folder in a cluster job, with its $, for example
 # "$SCRATCH" or "$TMPDIR". Pick one that is on a disk: on some clusters $TMPDIR is in memory.
 # "" runs every rule in the run folder.
@@ -132,12 +133,10 @@ annotation_chunk_pep: 5000
 # assembly depends on it.
 rnaspades_memory: "400"
 rnaspades_threads: 32
-# The Trinity guide gives about 1 GB per million read pairs. This figure follows
-# that rule of thumb and is not measured.
-trinity_inchworm_chrysalis_memory: "450"
-trinity_inchworm_chrysalis_threads: 16
-trinity_final_memory: "450"
-trinity_final_threads: 16
+# Trinity runs in one job. The Trinity guide gives about 1 GB per million read
+# pairs. This figure follows that rule of thumb and is not measured.
+trinity_memory: "450"
+trinity_threads: 32
 align_reads_memory: "100"
 align_reads_threads: 16
 kallisto_memory: "20"
@@ -146,9 +145,3 @@ busco_memory: "10"
 busco_threads: 16
 transdecoder_predict_memory: "6"
 transdecoder_predict_threads: 1
-
-# Trinity Butterfly runs its commands in chunks, one Slurm job per chunk. A chunk
-# holds at least trinity_butterfly_cmds_per_chunk commands, and there are at most
-# trinity_butterfly_max_chunks chunks.
-trinity_butterfly_cmds_per_chunk: 20
-trinity_butterfly_max_chunks: 1000

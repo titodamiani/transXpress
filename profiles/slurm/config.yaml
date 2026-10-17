@@ -32,11 +32,9 @@ cluster:
 # time limits for jobs which need more than the default time
 set-resources:
   - sprot_blastx_parallel:time="12:00:00"
-  - trinity_butterfly_parallel:time="12:00:00"
-  - trinity_final:time="2-00:00:00"
   - align_reads:time="3-00:00:00"
   - rnaspades:time="1-00:00:00"
-  - trinity_inchworm_chrysalis:time="5-00:00:00"
+  - trinity:time="7-00:00:00"
 
 default-resources:
   - time="4:00:00"

@@ -14,8 +14,12 @@
 # Snakemake formats the sbatch line before a shell sees it, so a brace that the
 # shell has to read is written twice.
 
+# Snakemake submits the jobs one after another, so the sleep keeps the submissions
+# to at most one per second. Snakemake 7.32.4 does not apply its own
+# --max-jobs-per-second limit to cluster jobs.
 cluster:
-  sbatch
+  sleep 1;
+    sbatch
     --nodes=1
     --cpus-per-task={threads}
     --mem={params.memory}GB
@@ -44,10 +48,9 @@ default-resources:
 cluster-status: slurm-status.sh
 restart-times: 1
 latency-wait: 60
-# At most this many jobs in the queue at once, submitted at most one per second,
-# so a run of hundreds of jobs does not flood the scheduler.
+# At most this many jobs in the queue at once, so a run of hundreds of jobs does
+# not flood the scheduler.
 jobs: 50
-max-jobs-per-second: 1
 rerun-incomplete: True
 conda-frontend: "conda"
 use-conda: True

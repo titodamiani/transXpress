@@ -1,0 +1,105 @@
+name: test
+
+# T1 (the small test data in tests/) through the whole pipeline, twice for each assembler, then a
+# comparison of the two runs: tests/compare_runs.py for rnaSPAdes, the sorted sequences for Trinity.
+# The annotation databases come from the download_databases target at the pinned releases and stay
+# in the Actions cache, keyed by the release numbers.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PFAM_RELEASE: "38.2"
+  RFAM_RELEASE: "15.1"
+  SPROT_RELEASE: "2026_03"
+  LINEAGE: viridiplantae_odb12
+
+jobs:
+  databases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: db-fill/resources/db
+          key: db-pfam${{ env.PFAM_RELEASE }}-rfam${{ env.RFAM_RELEASE }}-sprot${{ env.SPROT_RELEASE }}-${{ env.LINEAGE }}
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: envs/default.yaml
+          activate-environment: transxpress
+          conda-remove-defaults: true
+      - name: Fill the database folder
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash -el {0}
+        run: |
+          mkdir -p db-fill
+          cd db-fill
+          snakemake --snakefile ../Snakefile --use-conda --conda-frontend conda \
+            --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 2 download_databases \
+            --config pfam_release="$PFAM_RELEASE" rfam_release="$RFAM_RELEASE" sprot_release="$SPROT_RELEASE" lineage="$LINEAGE"
+          cat resources/db/versions.txt
+      - name: Upload the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: databases-logs
+          path: db-fill/logs
+
+  t1:
+    needs: databases
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        assembler: [rnaspades, trinity]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: db-fill/resources/db
+          key: db-pfam${{ env.PFAM_RELEASE }}-rfam${{ env.RFAM_RELEASE }}-sprot${{ env.SPROT_RELEASE }}-${{ env.LINEAGE }}
+          fail-on-cache-miss: true
+      - uses: actions/cache@v4
+        with:
+          path: conda-envs
+          key: conda-envs-${{ hashFiles('envs/*.yaml') }}
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: envs/default.yaml
+          activate-environment: transxpress
+          conda-remove-defaults: true
+      - name: Run T1 twice
+        shell: bash -el {0}
+        run: |
+          for run in a b; do
+            tests/make_run.sh "t1-${{ matrix.assembler }}-$run" "${{ matrix.assembler }}" "$GITHUB_WORKSPACE/db-fill/resources/db"
+            (cd "t1-${{ matrix.assembler }}-$run" && snakemake --snakefile ../Snakefile --use-conda --conda-frontend conda \
+              --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 4)
+          done
+      - name: Compare the two runs
+        shell: bash -el {0}
+        run: |
+          a="t1-${{ matrix.assembler }}-a"
+          b="t1-${{ matrix.assembler }}-b"
+          if [ "${{ matrix.assembler }}" = "rnaspades" ]; then
+            python tests/compare_runs.py "$a" "$b"
+          else
+            python tests/compare_runs.py "$a" "$b" --sequences results/assembly/transcriptome.fasta
+          fi
+      - name: Upload the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t1-${{ matrix.assembler }}-logs
+          path: |
+            t1-${{ matrix.assembler }}-*/logs
+            t1-${{ matrix.assembler }}-*/.snakemake/log

@@ -1,0 +1,14 @@
+# Files under results/ that may differ between two runs of the same input, and the reason for each.
+# Fields, separated by one tab: path pattern, mode, reason. See tests/compare_runs.py.
+results/annotation/*.out	strip:^# (Date:|SignalP-|TargetP-)	the header of a cmscan, SignalP or TargetP file holds the date or time of the run
+results/assembly/rnaspades/K*/configs/config.info	strip:^tmp_dir 	rnaSPAdes names its temporary folder at random
+results/assembly/rnaspades/run_spades.yaml	strip:job_uuid:|tmp/spades_	rnaSPAdes writes a random job ID and names its temporary folder at random
+results/assembly/rnaspades/spades.log	skip	every line starts with the run time
+results/expression/kallisto/*/abundance.h5	skip	the HDF5 file holds the start time of kallisto
+results/qc/busco/logs/*	skip	the logs hold memory addresses, speeds and random folder names
+results/qc/busco/run_viridiplantae_odb12/metaeuk_output/*	skip	BUSCO writes the hits in another order and with a random ID, and the lines are the same after sorting
+results/qc/busco/run_viridiplantae_odb12/hmmer_output.tar.gz	skip	the tar archive holds the file times
+results/qc/multiqc_*_trim/multiqc_data/multiqc.log	skip	the log holds the temporary folder of the job
+results/qc/multiqc_*_trim/multiqc_data/multiqc.parquet	skip	a binary file; multiqc_fastqc.txt holds the table
+results/qc/multiqc_*_trim/multiqc_report.html	skip	the report holds a random ID, reportUuid
+results/transdecoder/longorfs/*/__checkpoints_longorfs/pipeliner.*.cmds	skip	the file name holds the process ID

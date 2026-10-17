@@ -16,6 +16,10 @@ min_version("5.4.1")
 
 configfile: "config.yaml"
 
+# tmhmm.py 1.2.1 imports numpy in its setup.py, so pip builds it in envs/tmhmm.yaml against the numpy of
+# that env, without an isolated build env. Snakemake passes this variable to conda when it builds the env.
+os.environ.setdefault("PIP_NO_BUILD_ISOLATION", "0")
+
 validate(config, os.path.join(workflow.basedir, "schemas", "config.schema.yaml"), set_default=True)
 
 # The releases of the annotation databases. The download rules fetch exactly these releases.

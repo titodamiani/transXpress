@@ -169,6 +169,8 @@ rule tmhmm_parallel:
     "results/annotation/chunks/tmhmm/{index}.out"
   log:
     "logs/tmhmm_parallel/{index}.log"
+  conda:
+    "../envs/tmhmm.yaml"
   params:
     memory="2"
   threads:

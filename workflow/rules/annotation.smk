@@ -23,12 +23,14 @@ checkpoint fasta_split:
   log:
     "logs/fasta_split_{split}.log"
   params:
-    memory="2",
     chunk_size=lambda wildcards: ANNOTATION_CHUNK[wildcards.split],
     extension=lambda wildcards: wildcards.split,
     strip_stop=lambda wildcards: wildcards.split == "pep"
   threads:
     1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   script:
     "../scripts/split_fasta.py"
 
@@ -55,10 +57,11 @@ rule annotation_merge:
     "results/annotation/{task}_{split}.out"
   log:
     "logs/annotation_merge_{split}/{task}.log"
-  params:
-    memory="2"
   threads:
     1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   shell:
     """
     cat {input} > {output} 2> {log}
@@ -78,10 +81,11 @@ rule rfam_parallel:
     "logs/rfam_parallel/{index}.log"
   conda:
     "../envs/rfam.yaml"
-  params:
-    memory="5"
   threads:
     4
+  resources:
+    mem_mb=5120,
+    runtime="4h"
   shell:
     """
     cmscan -E {config[e_value_threshold]} --rfam --cpu {threads} --tblout {output} {input[db]} {input[fasta]} &> {log}
@@ -101,10 +105,11 @@ rule pfam_parallel:
     "logs/pfam_parallel/{index}.log"
   conda:
     "../envs/pfam.yaml"
-  params:
-    memory="2"
   threads:
     2
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   shell:
     """
     # Transdecoder requires --domtblout output
@@ -125,10 +130,11 @@ rule sprot_blastp_parallel:
     "logs/sprot_blastp_parallel/{index}.log"
   conda:
     "../envs/blast.yaml"
-  params:
-    memory="2"
   threads:
     2
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   shell:
     """
     blastp -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {config[e_value_threshold]} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
@@ -148,10 +154,11 @@ rule sprot_blastx_parallel:
     "logs/sprot_blastx_parallel/{index}.log"
   conda:
     "../envs/blast.yaml"
-  params:
-    memory="2"
   threads:
-    4
+    config["sprot_blastx_threads"]
+  resources:
+    mem_mb=gb_to_mb(config["sprot_blastx_memory"]),
+    runtime=config["sprot_blastx_runtime"]
   shell:
     """
     blastx -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {config[e_value_threshold]} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
@@ -169,10 +176,13 @@ rule tmhmm_parallel:
     "results/annotation/chunks/tmhmm/{index}.out"
   log:
     "logs/tmhmm_parallel/{index}.log"
-  params:
-    memory="2"
+  conda:
+    "../envs/tmhmm.yaml"
   threads:
     1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   script:
     "../scripts/tmhmm_chunk.py"
 
@@ -190,10 +200,12 @@ rule signalp_parallel:
   conda:
     "signalp"
   params:
-    memory="4",
     organism=SIGNALP_ORGANISM
   threads:
     1
+  resources:
+    mem_mb=4096,
+    runtime="4h"
   shell:
     """
     # Snakemake sets TMPDIR to the job's temporary folder, see job_tmpdir
@@ -218,10 +230,11 @@ rule targetp_parallel:
     "logs/targetp_parallel/{index}.log"
   conda:
     "targetp"
-  params:
-    memory="3"
   threads:
     1
+  resources:
+    mem_mb=3072,
+    runtime="4h"
   shell:
     """
     # targetp writes its result into the folder it runs in, which is the job's temporary folder
@@ -259,9 +272,10 @@ rule annotated_fasta:
     tpm_blast_table="results/annotation/transcriptome_TPM_blast.csv"
   log:
     "logs/annotated_fasta.log"
-  params:
-    memory="4"
   threads:
     1
+  resources:
+    mem_mb=4096,
+    runtime="4h"
   script:
     "../scripts/annotated_fasta.py"

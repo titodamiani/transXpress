@@ -2,19 +2,15 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - python=3.10
-  - snakemake=7.32.4      # Snakemake 8 removed --cluster
-  - pulp<2.8              # Snakemake 7.32.4 calls pulp.list_solvers, removed in pulp 2.8
-  - setuptools<82         # Snakemake 7 imports pkg_resources, removed in setuptools 82
-  - numpy<1.24            # tmhmm.py 1.2.1 uses np.int, removed in numpy 1.24
-  - cython<3              # needed to build tmhmm.py from source
-  - gcc
-  - pip
+  # The same Python as envs/tmhmm.yaml. A script: rule in another env loads the snakemake package of
+  # this env, so both envs need the same Python version.
+  - python=3.11
+  - snakemake=9.27.0
+  - snakemake-executor-plugin-slurm=2.8.0
+  - snakemake-executor-plugin-cluster-generic=1.0.9
   - biopython
   - pandas
   - matplotlib-base>3.3.2
   - seqkit
   - wget
   - sra-tools
-  - pip:
-    - tmhmm.py==1.2.1

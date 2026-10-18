@@ -12,11 +12,22 @@ from snakemake.utils import min_version, validate
 from Bio.Seq import Seq
 import pandas as pd
 
-min_version("5.4.1")
+min_version("9.27.0")
 
 configfile: "config.yaml"
 
+# tmhmm.py 1.2.1 imports numpy in its setup.py, so pip builds it in envs/tmhmm.yaml against the numpy of
+# that env, without an isolated build env. Snakemake passes this variable to conda when it builds the env.
+os.environ.setdefault("PIP_NO_BUILD_ISOLATION", "0")
+
 validate(config, os.path.join(workflow.basedir, "schemas", "config.schema.yaml"), set_default=True)
+
+def gb_to_mb(gb):
+  """
+  The mem_mb resource for a memory figure of config.yaml, which is in GB. Slurm reads the --mem value
+  in MB of 1024 KB, so 1 GB is 1024 MB here.
+  """
+  return int(float(gb) * 1024)
 
 # The releases of the annotation databases. The download rules fetch exactly these releases.
 PFAM_RELEASE = config["pfam_release"]
@@ -44,11 +55,11 @@ TARGETP_ORGANISM = config["targetp"] or ""
 # The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
 ANNOTATION_CHUNK = {split: config["annotation_chunk_" + split] for split in ["fasta", "orfs", "pep"]}
 
-# The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH".
-# "" runs every rule in the run folder. The heavy rules read the variable with bash, inside the job,
-# because only the job knows its value.
+# The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH" or
+# "SCRATCH". "" runs every rule in the run folder. The heavy rules read the variable with bash, inside
+# the job, because only the job knows its value.
 SCRATCH = config["scratch"] or ""
-SCRATCH_VAR = SCRATCH[1:]
+SCRATCH_VAR = SCRATCH.lstrip("$")
 # The shell functions that the heavy rules use to work in that folder
 SCRATCH_SH = os.path.join(workflow.basedir, "scripts", "scratch.sh")
 
@@ -108,6 +119,11 @@ rule clean:
   Not run by default. Deletes the results and the logs of the run, so the next run starts from the
   beginning. Keeps config.yaml, the samples file, resources/ and .snakemake/.
   """
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   shell:
     """
     rm -rf results logs
@@ -120,6 +136,11 @@ rule delete_intermediates:
   result stays and a later snakemake run in this folder has nothing to do: the trimmed reads and the
   kallisto, bowtie2 and RSEM indexes.
   """
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   shell:
     """
     rm -f results/trimmomatic/reads/*.fastq.gz
@@ -138,9 +159,11 @@ rule run_info:
   output:
     "results/run_info.txt"
   params:
-    memory="2",
     basedir=workflow.basedir
   threads:
     1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   script:
     "../scripts/run_info.py"

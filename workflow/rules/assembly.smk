@@ -15,11 +15,13 @@ rule trinity:
   conda:
     "../envs/trinity_utils.yaml"
   params:
-    memory=config.get("trinity_memory", "450"),
     scratch_var=SCRATCH_VAR,
     scratch_sh=SCRATCH_SH
   threads:
-    config.get("trinity_threads", 32)
+    config["trinity_threads"]
+  resources:
+    mem_mb=gb_to_mb(config["trinity_memory"]),
+    runtime=config["trinity_runtime"]
   # The common failures here are memory and time. A retry asks for the same figures and starts from the
   # beginning, so it would fail the same way, after hours on a large node.
   retries: 0
@@ -41,7 +43,7 @@ rule trinity:
       TRINITY_OUT=$WORK/trinity
     fi
 
-    Trinity --max_memory {params.memory}G --CPU {threads} --output "$TRINITY_OUT" --full_cleanup --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
+    Trinity --max_memory $(( {resources.mem_mb} / 1024 ))G --CPU {threads} --output "$TRINITY_OUT" --full_cleanup --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
 
     if [ -n "$LOCAL_ROOT" ]; then
       START=$(date +%s)
@@ -69,11 +71,13 @@ rule rnaspades:
   conda:
     "../envs/rnaspades.yaml"
   params:
-    memory=config.get("rnaspades_memory", "400"),
     scratch_var=SCRATCH_VAR,
     scratch_sh=SCRATCH_SH
   threads:
-    config.get("rnaspades_threads", 32)
+    config["rnaspades_threads"]
+  resources:
+    mem_mb=gb_to_mb(config["rnaspades_memory"]),
+    runtime=config["rnaspades_runtime"]
   # The common failures here are memory and time. A retry asks for the same figures and starts from the
   # beginning, so it would fail the same way, after hours on a large node.
   retries: 0
@@ -100,7 +104,7 @@ rule rnaspades:
     fi
 
     # No --checkpoints: Slurm deletes the local folder when the job ends, so a restart point would not survive
-    rnaspades.py --dataset {input.samples} -t {threads} -m {params.memory} -o "$SPADES_OUT" {config[strand_specific]} --only-assembler {config[kmers]} &>> {log}
+    rnaspades.py --dataset {input.samples} -t {threads} -m $(( {resources.mem_mb} / 1024 )) -o "$SPADES_OUT" {config[strand_specific]} --only-assembler {config[kmers]} &>> {log}
 
     if [ "$SPADES_OUT" != "$OUT" ]; then
       SIZE=$(du -sh "$WORK" | cut -f1)
@@ -136,6 +140,11 @@ rule transcriptome_copy:
     gene_trans_map="results/assembly/transcriptome.gene_trans_map"
   log:
     "logs/transcriptome_copy.log"
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   run:
     shell("cp -p {input.transcriptome} {output.transcriptome} &> {log}")
     if config["assembler"] == "rnaspades":

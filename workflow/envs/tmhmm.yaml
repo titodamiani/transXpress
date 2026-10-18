@@ -1,0 +1,14 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  # The same Python as envs/default.yaml, because the tmhmm_parallel script loads the snakemake package
+  # of that env
+  - python=3.11
+  - numpy<1.24            # tmhmm.py 1.2.1 uses np.int, removed in numpy 1.24
+  - cython<3              # builds tmhmm.py from source
+  - gcc
+  - pip
+  - biopython
+  - pip:
+    - tmhmm.py==1.2.1

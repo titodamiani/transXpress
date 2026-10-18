@@ -71,8 +71,8 @@ with open(log[0], "w") as log_handle:
 
   ## Load signalp results
   if input["signalp_results"]:
-    print ("Loading signalp predictions from", input["signalp_results"], file=log_handle)
-    with open(input["signalp_results"]) as input_handle:
+    print ("Loading signalp predictions from", input["signalp_results"][0], file=log_handle)
+    with open(input["signalp_results"][0]) as input_handle:
       csv_reader = csv.reader(input_handle, delimiter="\t")
       for row in csv_reader:
         if (len(row) < 2): continue
@@ -99,8 +99,8 @@ with open(log[0], "w") as log_handle:
                       "cTP": "chloroplast transit peptide",
                       "luTP": "thylakoidal lumen composite transit peptide",
                       "noTP": "no targeting peptide" }
-    print("Loading targetp predictions from", input["targetp_results"], file=log_handle)
-    with open(input["targetp_results"]) as input_handle:
+    print("Loading targetp predictions from", input["targetp_results"][0], file=log_handle)
+    with open(input["targetp_results"][0]) as input_handle:
       for line in input_handle:
         if (line.startswith("#")): continue
         row = line.split()

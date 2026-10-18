@@ -10,10 +10,11 @@ rule transdecoder_longorfs:
     "logs/transdecoder_longorfs.log"
   conda:
     "../envs/transdecoder.yaml"
-  params:
-    memory="2"
   threads:
     1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   shell:
     """
     # LongOrfs names its folder after the file name of the transcriptome
@@ -66,11 +67,13 @@ rule transdecoder_predict:
   conda:
     "../envs/transdecoder.yaml"
   params:
-    memory=config.get("transdecoder_predict_memory", "6"),
     workdir="results/transdecoder/predict_{orf_set}",
     single_best=lambda wildcards: "--single_best_only" if wildcards.orf_set == "single_best_orf" else ""
   threads:
-    config.get("transdecoder_predict_threads", 1)
+    config["transdecoder_predict_threads"]
+  resources:
+    mem_mb=gb_to_mb(config["transdecoder_predict_memory"]),
+    runtime=config["transdecoder_predict_runtime"]
   shell:
     """
     rm -rf {params.workdir} &> {log}
@@ -102,6 +105,11 @@ rule transdecoder_select:
     "results/transdecoder/transcriptome.pep"
   log:
     "logs/transdecoder_select.log"
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   shell:
     """
     cp -p {input} {output} &> {log}

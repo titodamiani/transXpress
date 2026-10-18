@@ -12,10 +12,11 @@ rule fastqc:
     "logs/fastqc_{stage}_trim.log"
   conda:
     "../envs/qc.yaml"
-  params:
-    memory="6"
   threads:
     8
+  resources:
+    mem_mb=6144,
+    runtime="4h"
   shell:
     """
     # run fastqc on input files
@@ -42,10 +43,11 @@ rule multiqc:
     "logs/multiqc_{stage}_trim.log"
   conda:
     "../envs/qc.yaml"
-  params:
-    memory="4"
   threads:
     1
+  resources:
+    mem_mb=4096,
+    runtime="4h"
   shell:
     """
     # common error resolved by those two export commands
@@ -67,6 +69,11 @@ rule fastqc_before_trim_warnings:
     warning_file="results/qc/WARNING_fastqc_before_trim_overview.txt"
   log:
     "logs/fastqc_before_trim_warnings.log"
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   script:
     "../scripts/fastqc_warnings.py"
     
@@ -85,6 +92,11 @@ rule compare_qc_after_trim:
     result="results/qc/FastQC_comparison_after_trim.txt"
   log:
     "logs/compare_qc_after_trim.log"
+  threads:
+    1
+  resources:
+    mem_mb=1024,
+    runtime="4h"
   run:
 
     mapping = {
@@ -149,10 +161,11 @@ rule trinity_stats:
     "logs/trinity_stats.log"
   conda:
     "../envs/trinity_utils.yaml"
-  params:
-    memory="2"
   threads:
     1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
   shell:
     """
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
@@ -189,14 +202,16 @@ rule busco:
   conda:
     "../envs/busco.yaml"
   params:
-    memory=config.get("busco_memory", "10"),
     lineage=LINEAGE,
     # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
     download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else "--download_path resources/busco_downloads",
     scratch_var=SCRATCH_VAR,
     scratch_sh=SCRATCH_SH
   threads:
-    config.get("busco_threads", 16)
+    config["busco_threads"]
+  resources:
+    mem_mb=gb_to_mb(config["busco_memory"]),
+    runtime=config["busco_runtime"]
   shell:
     """
     # BUSCO writes thousands of small files. When the scratch key names a variable that is set in this

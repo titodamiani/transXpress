@@ -16,8 +16,10 @@ assembler: "trinity"
 # in a folder on the node's own disk, and copy their files to the run folder when they end. Every
 # other job keeps its temporary files there too. This keeps the working files off the shared
 # network storage. rnaspades, trinity, kallisto and align_reads stop when the folder is in memory.
-# Give the environment variable that holds that folder in a cluster job, with its $, for example
-# "$SCRATCH" or "$TMPDIR". Pick one that is on a disk: on some clusters $TMPDIR is in memory.
+# Give the environment variable that holds that folder in a cluster job, for example "$SCRATCH" or
+# "$TMPDIR". Pick one that is on a disk: on some clusters $TMPDIR is in memory.
+# In a profile or with --config, write the name without the $, for example "SCRATCH": Snakemake
+# passes that value to each cluster job through a shell, which would put in the folder of the main job.
 # "" runs every rule in the run folder.
 scratch: ""
 
@@ -125,23 +127,36 @@ annotation_chunk_fasta: 1000
 annotation_chunk_orfs: 5000
 annotation_chunk_pep: 5000
 
-# Memory in GB and the thread count of the rules whose size follows the dataset.
+# Memory in GB, the thread count and the time limit of the rules whose size follows the dataset.
 # The values here suit about 420 million read pairs, which is 18 Illumina libraries.
 # Lower them for a smaller dataset. A rule that works on one annotation chunk
-# keeps its size in the Snakefile, because that size holds at any dataset size.
+# keeps its size in its rule file, because that size holds at any dataset size.
+# sprot_blastx_parallel is the exception: its time follows annotation_chunk_fasta.
 # Keep the assembler thread count the same across runs you want to compare. The
 # assembly depends on it.
+# A time limit is a number of minutes or a text such as "30m", "12h" or "7d". On a cluster
+# with a maintenance window, set the long ones below the time left, for example with
+# --set-resources rnaspades:runtime=10h on the snakemake command line.
 rnaspades_memory: "400"
 rnaspades_threads: 32
+rnaspades_runtime: "1d"
 # Trinity runs in one job. The Trinity guide gives about 1 GB per million read
 # pairs. This figure follows that rule of thumb and is not measured.
 trinity_memory: "450"
 trinity_threads: 32
+trinity_runtime: "7d"
 align_reads_memory: "100"
 align_reads_threads: 16
+align_reads_runtime: "3d"
 kallisto_memory: "20"
 kallisto_threads: 16
+kallisto_runtime: "4h"
 busco_memory: "10"
 busco_threads: 16
+busco_runtime: "4h"
 transdecoder_predict_memory: "6"
 transdecoder_predict_threads: 1
+transdecoder_predict_runtime: "4h"
+sprot_blastx_memory: "2"
+sprot_blastx_threads: 4
+sprot_blastx_runtime: "12h"

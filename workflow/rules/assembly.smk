@@ -16,7 +16,9 @@ rule trinity:
     "../envs/trinity_utils.yaml"
   params:
     scratch_var=SCRATCH_VAR,
-    scratch_sh=SCRATCH_SH
+    scratch_sh=SCRATCH_SH,
+    trinity_parameters=config["trinity_parameters"],
+    strand_specific=config["strand_specific"]
   threads:
     config["trinity_threads"]
   resources:
@@ -43,7 +45,7 @@ rule trinity:
       TRINITY_OUT=$WORK/trinity
     fi
 
-    Trinity --max_memory $(( {resources.mem_mb} / 1024 ))G --CPU {threads} --output "$TRINITY_OUT" --full_cleanup --samples_file {input.samples} {config[trinity_parameters]} {config[strand_specific]} &>> {log}
+    Trinity --max_memory $(( {resources.mem_mb} / 1024 ))G --CPU {threads} --output "$TRINITY_OUT" --full_cleanup --samples_file {input.samples} {params.trinity_parameters} {params.strand_specific} &>> {log}
 
     if [ -n "$LOCAL_ROOT" ]; then
       START=$(date +%s)
@@ -65,14 +67,15 @@ rule rnaspades:
     default="results/assembly/rnaspades/transcripts.fasta",
     hard="results/assembly/rnaspades/hard_filtered_transcripts.fasta",
     soft="results/assembly/rnaspades/soft_filtered_transcripts.fasta"
-    ##config["annotated_fasta_prefix"]+"_spades_out/K"+THEKMER+"/assembly_graph_with_scaffolds.gfa"
   log:
     "logs/rnaspades.log"
   conda:
     "../envs/rnaspades.yaml"
   params:
     scratch_var=SCRATCH_VAR,
-    scratch_sh=SCRATCH_SH
+    scratch_sh=SCRATCH_SH,
+    strand_specific=config["strand_specific"],
+    kmers=config["kmers"]
   threads:
     config["rnaspades_threads"]
   resources:
@@ -104,7 +107,7 @@ rule rnaspades:
     fi
 
     # No --checkpoints: Slurm deletes the local folder when the job ends, so a restart point would not survive
-    rnaspades.py --dataset {input.samples} -t {threads} -m $(( {resources.mem_mb} / 1024 )) -o "$SPADES_OUT" {config[strand_specific]} --only-assembler {config[kmers]} &>> {log}
+    rnaspades.py --dataset {input.samples} -t {threads} -m $(( {resources.mem_mb} / 1024 )) -o "$SPADES_OUT" {params.strand_specific} --only-assembler {params.kmers} &>> {log}
 
     if [ "$SPADES_OUT" != "$OUT" ]; then
       SIZE=$(du -sh "$WORK" | cut -f1)
@@ -115,14 +118,6 @@ rule rnaspades:
       echo "copied $SIZE from $WORK to $OUT in $(( $(date +%s) - START )) s" &>> {log}
     fi
     """
- 
-
-
-def transcriptome_copy_input(wildcards):
-  if config["assembler"] == "rnaspades":
-    return {"transcriptome": getattr(rules.rnaspades.output, RNASPADES_FILTER)}
-  return {"transcriptome": rules.trinity.output.transcriptome,
-          "gene_trans_map": rules.trinity.output.gene_trans_map}
 
 
 rule transcriptome_copy:

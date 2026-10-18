@@ -17,7 +17,8 @@ rule align_reads:
   params:
     scratch_var=SCRATCH_VAR,
     scratch_sh=SCRATCH_SH,
-    out_dir="results/expression/bowtie2_rsem"
+    out_dir=lambda wildcards, output: os.path.dirname(output[0]),
+    strand=abundance_strand_option()
   threads:
     config["align_reads_threads"]
   resources:
@@ -59,25 +60,7 @@ rule align_reads:
     for rep in $(awk '{{print $2}}' samples_trimmed.txt); do rm -f "$rep/bowtie2.bam.ok"; done
 
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
-
-
-    assembler="{config[assembler]}"
-    strand_specific="{config[strand_specific]}"
-    
-    if [ $assembler = "rnaspades" ]
-    then
-      if [[ $strand_specific = "--ss rf" ]]
-      then
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta --SS_lib_type RF --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
-      elif [[ $strand_specific = "--ss fr" ]]
-      then
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta --SS_lib_type FR --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
-      else
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
-      fi
-    else
-      $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {config[strand_specific]} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
-    fi
+    $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {params.strand} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
 
     # for_rsem.bam is a large temporary copy of the alignment. Nothing reads it later.
     for rep in $(awk '{{print $2}}' samples_trimmed.txt); do rm -f "$rep/bowtie2.bam.for_rsem.bam"; done
@@ -120,14 +103,7 @@ rule prepare_samples_for_IGV:
     """
     samtools sort --threads {threads} -m 2G -o {output.sorted_alignment} {params.alignment} &> {log}
     samtools index {output.sorted_alignment} &>> {log}
-    """ 
-
-
-def get_igv(wildcards):
-  # one indexed alignment per replicate, the second column of the samples file
-  with open(check_samples(config["samples_file"])) as handle:
-    replicates = [line.split()[1] for line in handle if line.split()]
-  return expand("results/expression/bowtie2_rsem/igv/{sample}.sorted.bam.bai", sample=replicates)
+    """
 
 
 rule IGV:
@@ -166,6 +142,8 @@ rule trinity_DE:
     "logs/trinity_DE.log"
   conda:
     "../envs/trinity_utils.yaml"
+  params:
+    dispersion=config["dispersion"]
   threads:
     1
   resources:
@@ -177,13 +155,13 @@ rule trinity_DE:
 
     # run_DE_analysis.pl estimates the dispersion for each pair of samples in which both samples have
     # more than one replicate, and uses --dispersion for a pair in which a sample has one replicate
-    $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} --dispersion {config[dispersion]} &> {log}
+    $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} --dispersion {params.dispersion} &> {log}
     """
 
 
 rule kallisto:
   """
-  Runs Trinity script to perform transcript expression quantification 
+  Runs Trinity script to perform transcript expression quantification
   using Kallisto.
   """
   input:
@@ -191,9 +169,9 @@ rule kallisto:
     transcriptome="results/assembly/transcriptome.fasta",
     gene_trans_map="results/assembly/transcriptome.gene_trans_map"
   output:
-    "results/expression/transcriptome_expression_isoform.tsv",
-    "results/expression/transcriptome_expression_gene.tsv",
-    "results/expression/kallisto/kallisto.gene.counts.matrix"
+    isoform="results/expression/transcriptome_expression_isoform.tsv",
+    gene="results/expression/transcriptome_expression_gene.tsv",
+    counts="results/expression/kallisto/kallisto.gene.counts.matrix"
   log:
     "logs/kallisto.log"
   conda:
@@ -201,7 +179,8 @@ rule kallisto:
   params:
     scratch_var=SCRATCH_VAR,
     scratch_sh=SCRATCH_SH,
-    out_dir="results/expression/kallisto"
+    out_dir=lambda wildcards, output: os.path.dirname(output.counts),
+    strand=abundance_strand_option()
   threads:
     config["kallisto_threads"]
   resources:
@@ -244,38 +223,22 @@ rule kallisto:
     ln -sfn "$RUN/{input.gene_trans_map}" transcriptome.gene_trans_map
     awk -v run="$RUN" 'BEGIN {{ OFS = "\t" }} {{ for (i = 3; i <= NF; i++) $i = run "/" $i; print }}' "$RUN/{input.samples}" > samples_trimmed.txt
 
-    assembler="{config[assembler]}"
-    strand_specific="{config[strand_specific]}"
-
-    if [ $assembler = "rnaspades" ]
-    then
-      if [[ $strand_specific = "--ss rf" ]]
-      then
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta --SS_lib_type RF --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
-      elif [[ $strand_specific = "--ss fr" ]]
-      then
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta --SS_lib_type FR --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
-      else
-        $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
-      fi
-    else
-      $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {config[strand_specific]} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
-    fi
+    $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {params.strand} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
 
     # the matrix columns follow the order of the files on the command line, here the order of the samples file
     $TRINITY_HOME/util/abundance_estimates_to_matrix.pl --est_method kallisto --name_sample_by_basedir --gene_trans_map transcriptome.gene_trans_map $(awk '{{print $2 "/abundance.tsv"}}' samples_trimmed.txt) &>> "$LOG"
     if [ -f kallisto.isoform.TMM.EXPR.matrix ]; then
-      cp -p kallisto.isoform.TMM.EXPR.matrix "$RUN/{output[0]}" &>> "$LOG"
+      cp -p kallisto.isoform.TMM.EXPR.matrix "$RUN/{output.isoform}" &>> "$LOG"
     elif [ -f kallisto.isoform.TPM.not_cross_norm ]; then
-      cp -p kallisto.isoform.TPM.not_cross_norm "$RUN/{output[0]}" &>> "$LOG"
+      cp -p kallisto.isoform.TPM.not_cross_norm "$RUN/{output.isoform}" &>> "$LOG"
     else
       echo Neither kallisto.isoform.TMM.EXPR.matrix or kallisto.isoform.TPM.not_cross_norm were produced
       exit 1
     fi
     if [ -f kallisto.gene.TMM.EXPR.matrix ]; then
-      cp -p kallisto.gene.TMM.EXPR.matrix "$RUN/{output[1]}" &>> "$LOG"
+      cp -p kallisto.gene.TMM.EXPR.matrix "$RUN/{output.gene}" &>> "$LOG"
     elif [ -f kallisto.gene.TPM.not_cross_norm ]; then
-      cp -p kallisto.gene.TPM.not_cross_norm "$RUN/{output[1]}" &>> "$LOG"
+      cp -p kallisto.gene.TPM.not_cross_norm "$RUN/{output.gene}" &>> "$LOG"
     else
       echo Neither kallisto.gene.TMM.EXPR.matrix or kallisto.gene.TPM.not_cross_norm were produced
       exit 1
@@ -290,5 +253,3 @@ rule kallisto:
       echo "copied $SIZE from $WORK to {params.out_dir} in $(( $(date +%s) - START )) s" &>> "$LOG"
     fi
     """
-
- 

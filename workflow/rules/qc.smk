@@ -86,13 +86,12 @@ rule fastqc_before_trim_warnings:
     runtime="4h"
   script:
     "../scripts/fastqc_warnings.py"
-    
 
 
 rule compare_qc_after_trim:
   """
   Compares the quality of reads before and after trimming.
-  Compares PER BASE SEQUENCE QUALITY, PER SEQUENCE QUALITY SCORES, 
+  Compares PER BASE SEQUENCE QUALITY, PER SEQUENCE QUALITY SCORES,
   OVERREPRESENTED SEQUENCES and ADAPTER CONTENT modules of FastQC.
   """
   input:
@@ -107,52 +106,8 @@ rule compare_qc_after_trim:
   resources:
     mem_mb=1024,
     runtime="4h"
-  run:
-
-    mapping = {
-      "per_base_sequence_quality": "PER BASE SEQUENCE QUALITY",
-      "per_sequence_quality_scores": "PER SEQUENCE QUALITY SCORES",
-      "overrepresented_sequences": "OVERREPRESENTED SEQUENCES",
-      "adapter_content": "ADAPTER CONTENT"
-    }
-
-    def compare_module(module_name, before_trim, after_trim, out_file):
-      module_name = mapping[module_name]
-      out_file.writelines(f"""**{module_name}**
-Before trimming:
-pass: {str(before_trim.count('pass'))} out of {str(len(before_trim))} ({str(before_trim.count('pass')/len(before_trim)*100)}%)
-warn: {str(before_trim.count('warn'))} out of {str(len(before_trim))} ({str(before_trim.count('warn')/len(before_trim)*100)}%)
-fail: {str(before_trim.count('fail'))} out of {str(len(before_trim))} ({str(before_trim.count('fail')/len(before_trim)*100)}%)
-      
-After trimming:
-pass: {str(after_trim.count('pass'))} out of {str(len(after_trim))} ({str(after_trim.count('pass')/len(after_trim)*100)}%)
-warn: {str(after_trim.count('warn'))} out of {str(len(after_trim))} ({str(after_trim.count('warn')/len(after_trim)*100)}%)
-fail: {str(after_trim.count('fail'))} out of {str(len(after_trim))} ({str(after_trim.count('fail')/len(after_trim)*100)}%)
-{'-' * 50}
-""")
-
-    before = pd.read_csv(input["before"], sep='\t')
-    before = before.set_index('Sample')
-
-    after = pd.read_csv(input["after"], sep='\t')
-    after = after.set_index('Sample')
-
-    modules = ['per_base_sequence_quality', 'per_sequence_quality_scores', 'overrepresented_sequences', 'adapter_content']
-
-    with open(output["result"], "w") as out_file:
-      out_file.write("FASTQC COMPARISON BEFORE AND AFTER TRIMMING\n")
-      out_file.write('-' * 50 + '\n')
-
-      for module in modules:
-        before_list = before[module].tolist()
-        after_list = after[module].tolist()
-        compare_module(module, before_list, after_list, out_file)
-
-    # print the results also in the terminal
-    with open(output["result"], "r") as out_file:
-      for line in out_file.readlines():
-        print(line.strip())
-      print('See this output in ' + output["result"])
+  script:
+    "../scripts/fastqc_compare.py"
 
 
 rule trinity_stats:
@@ -171,6 +126,8 @@ rule trinity_stats:
     "logs/trinity_stats.log"
   conda:
     "../envs/trinity_utils.yaml"
+  params:
+    assembler=config["assembler"]
   threads:
     1
   resources:
@@ -183,11 +140,10 @@ rule trinity_stats:
     # genes tied on expression keep that order. A fixed Perl hash seed gives the same order in each run.
     export PERL_HASH_SEED=0
 
-    assembler={config[assembler]}
-    if [ "$assembler" = 'trinity' ]; then
-        $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} > {output.stats} 2> {log}
+    if [ "{params.assembler}" = trinity ]; then
+      $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} > {output.stats} 2> {log}
     else
-        $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} | sed -e 's/trinity/rnaspades/g' > {output.stats} 2> {log}
+      $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} | sed -e 's/trinity/rnaspades/g' > {output.stats} 2> {log}
     fi
     # contig_ExN50_statistic.pl writes its .E-inputs table and the R script writes ExN50_plot.pdf into the
     # folder they run in, so both run in the folder of the outputs
@@ -214,7 +170,7 @@ rule busco:
   params:
     lineage=LINEAGE,
     # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
-    download_option=("--offline --download_path " + DB_DIR + "/busco_downloads") if DB_SHARED else "--download_path resources/busco_downloads",
+    download_option=f"--offline --download_path {DB_DIR}/busco_downloads" if DB_SHARED else "--download_path resources/busco_downloads",
     scratch_var=SCRATCH_VAR,
     scratch_sh=SCRATCH_SH
   threads:

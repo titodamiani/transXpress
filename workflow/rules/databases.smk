@@ -20,7 +20,7 @@ if not DB_SHARED:
     params:
       release=SPROT_RELEASE,
       current_url="https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete",
-      archive_url="https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-" + SPROT_RELEASE + "/knowledgebase"
+      archive_url=f"https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-{SPROT_RELEASE}/knowledgebase"
     threads:
       1
     resources:
@@ -95,7 +95,7 @@ if not DB_SHARED:
       "../envs/pfam.yaml"
     params:
       release=PFAM_RELEASE,
-      url="https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam" + PFAM_RELEASE
+      url=f"https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam{PFAM_RELEASE}"
     threads:
       1
     resources:
@@ -132,7 +132,7 @@ if not DB_SHARED:
       "../envs/rfam.yaml"
     params:
       release=RFAM_RELEASE,
-      url="https://ftp.ebi.ac.uk/pub/databases/Rfam/" + RFAM_RELEASE
+      url=f"https://ftp.ebi.ac.uk/pub/databases/Rfam/{RFAM_RELEASE}"
     threads:
       1
     resources:
@@ -155,7 +155,7 @@ if not DB_SHARED:
     into resources/busco_downloads.
     """
     output:
-      directory("resources/db/busco_downloads/lineages/" + LINEAGE)
+      directory(f"resources/db/busco_downloads/lineages/{LINEAGE}")
     log:
       "logs/download_busco_lineage.log"
     conda:
@@ -181,7 +181,7 @@ if not DB_SHARED:
     """
     input:
       versions=["resources/db/uniprot_sprot.version", "resources/db/Pfam-A.version", "resources/db/Rfam.version"],
-      lineage=["resources/db/busco_downloads/lineages/" + LINEAGE] if LINEAGE else []
+      lineage=[f"resources/db/busco_downloads/lineages/{LINEAGE}"] if LINEAGE else []
     output:
       "resources/db/versions.txt"
     threads:

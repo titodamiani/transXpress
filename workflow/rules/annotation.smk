@@ -8,9 +8,6 @@ ANNOTATION_SPLIT_INPUT = {
 wildcard_constraints:
   split="fasta|orfs|pep"
 
-# a more elegant way to do this is:
-# seqkit seq -i {input} | seqkit replace -s -p "\*" -r "" | seqkit split -f -s 1 -O {output}
-# however, there seems to be a problem in seqkit: https://github.com/shenwei356/seqkit/issues/65
 checkpoint fasta_split:
   """
   Splits the transcriptome.fasta, the transcriptome.orfs or the transcriptome.pep into smaller files so
@@ -33,18 +30,6 @@ checkpoint fasta_split:
     runtime="4h"
   script:
     "../scripts/split_fasta.py"
-
-
-def parallel_annotation_tasks(wildcards):
-  """
-  Returns filenames of files which were annotated in parallel.
-  """
-  parallel_dir = checkpoints.fasta_split.get(split=wildcards["split"]).output[0]
-  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
-  # glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}." + wildcards["split"])).index, key=int)
-  completed_files = expand("results/annotation/chunks/{task}/{index}.out",index=job_ids, task=wildcards["task"])
-  return completed_files
 
 
 rule annotation_merge:
@@ -74,13 +59,15 @@ rule rfam_parallel:
   """
   input:
     fasta="results/annotation/chunks/fasta/{index}.fasta",
-    db=DB_DIR + "/Rfam.cm"
+    db=f"{DB_DIR}/Rfam.cm"
   output:
     "results/annotation/chunks/rfam/{index}.out"
   log:
     "logs/rfam_parallel/{index}.log"
   conda:
     "../envs/rfam.yaml"
+  params:
+    evalue=config["e_value_threshold"]
   threads:
     4
   resources:
@@ -88,7 +75,7 @@ rule rfam_parallel:
     runtime="4h"
   shell:
     """
-    cmscan -E {config[e_value_threshold]} --rfam --cpu {threads} --tblout {output} {input[db]} {input[fasta]} &> {log}
+    cmscan -E {params.evalue} --rfam --cpu {threads} --tblout {output} {input[db]} {input[fasta]} &> {log}
     """
 
 
@@ -98,13 +85,15 @@ rule pfam_parallel:
   """
   input:
     fasta="results/annotation/chunks/orfs/{index}.orfs",
-    db=DB_DIR + "/Pfam-A.hmm"
+    db=f"{DB_DIR}/Pfam-A.hmm"
   output:
     "results/annotation/chunks/pfam/{index}.out"
   log:
     "logs/pfam_parallel/{index}.log"
   conda:
     "../envs/pfam.yaml"
+  params:
+    evalue=config["e_value_threshold"]
   threads:
     2
   resources:
@@ -113,7 +102,7 @@ rule pfam_parallel:
   shell:
     """
     # Transdecoder requires --domtblout output
-    hmmscan -E {config[e_value_threshold]} --cpu {threads} --domtblout {output} {input[db]} {input[fasta]} &> {log}
+    hmmscan -E {params.evalue} --cpu {threads} --domtblout {output} {input[db]} {input[fasta]} &> {log}
     """
 
 
@@ -123,13 +112,15 @@ rule sprot_blastp_parallel:
   """
   input:
     fasta="results/annotation/chunks/orfs/{index}.orfs",
-    db=DB_DIR + "/uniprot_sprot.fasta"
+    db=f"{DB_DIR}/uniprot_sprot.fasta"
   output:
     "results/annotation/chunks/sprotblastp/{index}.out"
   log:
     "logs/sprot_blastp_parallel/{index}.log"
   conda:
     "../envs/blast.yaml"
+  params:
+    evalue=config["e_value_threshold"]
   threads:
     2
   resources:
@@ -137,7 +128,7 @@ rule sprot_blastp_parallel:
     runtime="4h"
   shell:
     """
-    blastp -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {config[e_value_threshold]} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
+    blastp -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {params.evalue} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
     """
 
 
@@ -147,13 +138,15 @@ rule sprot_blastx_parallel:
   """
   input:
     fasta="results/annotation/chunks/fasta/{index}.fasta",
-    db=DB_DIR + "/uniprot_sprot.fasta"
+    db=f"{DB_DIR}/uniprot_sprot.fasta"
   output:
     "results/annotation/chunks/sprotblastx/{index}.out"
   log:
     "logs/sprot_blastx_parallel/{index}.log"
   conda:
     "../envs/blast.yaml"
+  params:
+    evalue=config["e_value_threshold"]
   threads:
     config["sprot_blastx_threads"]
   resources:
@@ -161,7 +154,7 @@ rule sprot_blastx_parallel:
     runtime=config["sprot_blastx_runtime"]
   shell:
     """
-    blastx -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {config[e_value_threshold]} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
+    blastx -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {params.evalue} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
     """
 
 
@@ -238,6 +231,8 @@ rule targetp_parallel:
     None if TARGETP_CONTAINER or not TARGETP_ORGANISM else "targetp"
   container:
     TARGETP_CONTAINER or None
+  params:
+    organism=TARGETP_ORGANISM
   threads:
     1
   resources:
@@ -251,7 +246,7 @@ rule targetp_parallel:
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/targetp.XXXXXX")
     echo "work folder: $TMP" &> "$RUN/{log}"
     cd $TMP
-    targetp -fasta "$RUN/{input}" -format short -org {config[targetp]} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
+    targetp -fasta "$RUN/{input}" -format short -org {params.organism} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
     mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}" &>> "$RUN/{log}"
     cd "$RUN"
     rm -r $TMP
@@ -260,7 +255,7 @@ rule targetp_parallel:
 
 rule annotated_fasta:
   """
-  Puts annotations in the headers of transcripts/proteins in the 
+  Puts annotations in the headers of transcripts/proteins in the
   .fasta/.pep transcriptome files.
   """
   input:

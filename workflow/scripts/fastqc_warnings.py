@@ -2,7 +2,7 @@ import pandas as pd
 
 input, output = snakemake.input, snakemake.output
 
-
+# The titles of the FastQC modules in the report
 mapping = {
 "basic_statistics": "BASIC STATISTICS",
 "per_base_sequence_quality": "PER BASE SEQUENCE QUALITY",
@@ -117,8 +117,6 @@ Any library where a reasonable proportion of the insert sizes are shorter than t
 """
 }
 
-
-
 with open(output["warning_file"], "w") as out_file:
   df1 = pd.read_csv(input["fastqc_report"], sep='\t')
   df1 = df1.set_index('Sample')
@@ -130,10 +128,7 @@ with open(output["warning_file"], "w") as out_file:
   n_samples = df1.shape[0]
 
   for column in df1_filtered.columns:
-    if column in mapping.keys():
-      out_file.writelines(mapping[column]+'\n')
-    else:
-      out_file.writelines(column+'\n')
+    out_file.write(mapping.get(column, column) + '\n')
     results = df1_filtered[column].tolist()
     if ('warn' in results) or ('fail' in results):
       n_warn = results.count('warn')
@@ -141,14 +136,14 @@ with open(output["warning_file"], "w") as out_file:
       n_warn_perc = round(n_warn/n_samples*100,2)
       n_fail_perc = round(n_fail/n_samples*100,2)
       if n_warn > 0:
-        out_file.writelines(f'{n_warn} out of {n_samples} produced "WARN" ({n_warn_perc}%)\n')
+        out_file.write(f'{n_warn} out of {n_samples} produced "WARN" ({n_warn_perc}%)\n')
       if n_fail > 0:
-        out_file.writelines(f'{n_fail} out of {n_samples} produced "FAIL" ({n_fail_perc}%)\n')
-      if column in reasons_mapping.keys():
-        out_file.writelines('\n' + reasons_mapping[column])
+        out_file.write(f'{n_fail} out of {n_samples} produced "FAIL" ({n_fail_perc}%)\n')
+      if column in reasons_mapping:
+        out_file.write('\n' + reasons_mapping[column])
     else:
-      out_file.writelines('ok'+'\n')
-  out_file.writelines('source: https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/\n')
+      out_file.write('ok\n')
+  out_file.write('source: https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/\n')
 
 # print to stdout
 with open(output["warning_file"], "r") as out_file:

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Makes a T1 run folder: the test data, a samples file and a config.yaml.
 # Usage: tests/make_run.sh <folder> <assembler> <db_dir>
-#   folder     a new folder directly inside the repository folder, because the config reads
-#              ../adapters.fasta. Run the pipeline there: snakemake --snakefile ../Snakefile
+#   folder     the new run folder, directly inside the repository folder. Run the pipeline there:
+#              snakemake --snakefile ../workflow/Snakefile
 #   assembler  rnaspades or trinity
 #   db_dir     a database folder made by the download_databases target (see README.md)
 # SignalP and TargetP are off (signalp "" and targetp ""), and Trinity runs Inchworm on one thread,

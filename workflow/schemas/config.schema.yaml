@@ -1,0 +1,131 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+description: The config.yaml of a transXpress run. config.yaml in the repository explains each key.
+type: object
+
+properties:
+  samples_file:
+    type: string
+    description: The samples file, one line for each pair or single read file.
+  trimmomatic_parameters:
+    type: string
+    description: Trimmomatic parameters. {adapters} stands for resources/adapters.fasta.
+  assembler:
+    type: string
+    enum: [trinity, rnaspades]
+  scratch:
+    type: [string, "null"]
+    pattern: '^(\$[A-Za-z_][A-Za-z0-9_]*)?$'
+    default: ""
+    description: The environment variable, with its $, that holds the node-local folder. "" works in the run folder.
+  trinity_parameters:
+    type: string
+  strand_specific:
+    type: string
+  rnaspades_filter:
+    type: string
+    enum: [default, hard, soft]
+    default: default
+  kmers:
+    type: string
+    default: ""
+  annotated_fasta_prefix:
+    type: string
+  e_value_threshold:
+    type: [string, number]
+  dispersion:
+    type: [string, number]
+  targetp:
+    type: [string, "null"]
+    enum: [pl, non-pl, "", null]
+    default: non-pl
+    description: The organism group for TargetP. "" turns TargetP off.
+  signalp:
+    type: [string, "null"]
+    enum: [eukarya, other, "", null]
+    default: eukarya
+    description: The organism group for SignalP. "" turns SignalP off.
+  lineage:
+    type: [string, "null"]
+    default: ""
+  db_dir:
+    type: string
+    default: resources/db
+  pfam_release:
+    type: string
+    default: "38.2"
+  rfam_release:
+    type: string
+    default: "15.1"
+  sprot_release:
+    type: string
+    pattern: '^[0-9]{4}_[0-9]{2}$'
+    default: "2026_03"
+    description: Write it in quotes, because YAML reads 2026_03 as the number 202603.
+  transdecoder_orfs:
+    type: string
+    enum: [all, single_best]
+    default: all
+  annotation_chunk_fasta:
+    type: integer
+    minimum: 1
+    default: 1000
+  annotation_chunk_orfs:
+    type: integer
+    minimum: 1
+    default: 5000
+  annotation_chunk_pep:
+    type: integer
+    minimum: 1
+    default: 5000
+  rnaspades_memory:
+    type: [string, integer]
+    default: "400"
+  rnaspades_threads:
+    type: integer
+    minimum: 1
+    default: 32
+  trinity_memory:
+    type: [string, integer]
+    default: "450"
+  trinity_threads:
+    type: integer
+    minimum: 1
+    default: 32
+  align_reads_memory:
+    type: [string, integer]
+    default: "100"
+  align_reads_threads:
+    type: integer
+    minimum: 1
+    default: 16
+  kallisto_memory:
+    type: [string, integer]
+    default: "20"
+  kallisto_threads:
+    type: integer
+    minimum: 1
+    default: 16
+  busco_memory:
+    type: [string, integer]
+    default: "10"
+  busco_threads:
+    type: integer
+    minimum: 1
+    default: 16
+  transdecoder_predict_memory:
+    type: [string, integer]
+    default: "6"
+  transdecoder_predict_threads:
+    type: integer
+    minimum: 1
+    default: 1
+
+required:
+  - samples_file
+  - trimmomatic_parameters
+  - assembler
+  - trinity_parameters
+  - strand_specific
+  - annotated_fasta_prefix
+  - e_value_threshold
+  - dispersion

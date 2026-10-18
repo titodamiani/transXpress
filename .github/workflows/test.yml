@@ -40,8 +40,9 @@ jobs:
         shell: bash -el {0}
         run: |
           mkdir -p db-fill
+          cp config.yaml db-fill/
           cd db-fill
-          snakemake --snakefile ../Snakefile --use-conda --conda-frontend conda \
+          snakemake --snakefile ../workflow/Snakefile --use-conda --conda-frontend conda \
             --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 2 download_databases \
             --config pfam_release="$PFAM_RELEASE" rfam_release="$RFAM_RELEASE" sprot_release="$SPROT_RELEASE" lineage="$LINEAGE"
           cat resources/db/versions.txt
@@ -82,7 +83,7 @@ jobs:
         run: |
           for run in a b; do
             tests/make_run.sh "t1-${{ matrix.assembler }}-$run" "${{ matrix.assembler }}" "$GITHUB_WORKSPACE/db-fill/resources/db"
-            (cd "t1-${{ matrix.assembler }}-$run" && snakemake --snakefile ../Snakefile --use-conda --conda-frontend conda \
+            (cd "t1-${{ matrix.assembler }}-$run" && snakemake --snakefile ../workflow/Snakefile --use-conda --conda-frontend conda \
               --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 4)
           done
       - name: Compare the two runs

@@ -6,11 +6,14 @@ Usage: compare_runs.py RUN_A RUN_B [--allowed tests/allowed_diffs.tsv] [--quiet]
 
 Every file under RUN_A/results must exist in RUN_B/results, and the other way round.
 Two files match when their bytes match. A gzip file matches when its decompressed bytes match.
+Before the comparison, two paths are replaced in the content, because many tools write the folder
+they ran in: the absolute path of each run folder becomes "@RUN@", and the node-local work folder of
+a job (/scratch/slurm_jobs/<user>/<job id>/transxpress.<random>) becomes "@SCRATCH@".
 
 A file that differs passes only when a line of the allowed-diffs file names it. Each line has
 three tab-separated fields: a path pattern (fnmatch, relative to the run folder, "*" also
 matches "/"), a mode, and the reason the file may differ. The mode is one of:
-  skip         the file may differ in any way
+  skip         the file may differ in any way, or exist in one run only
   strip:REGEX  the file matches after the lines that REGEX matches are dropped from both
 Lines that start with "#" and empty lines are comments.
 
@@ -29,6 +32,9 @@ import sys
 from pathlib import Path
 
 
+SCRATCH_FOLDER = re.compile(rb"/scratch/slurm_jobs/[^/\s]+/\d+/transxpress\.\w+")
+
+
 def read_allowed(path):
     rules = []
     for number, line in enumerate(Path(path).read_text().splitlines(), 1):
@@ -41,15 +47,16 @@ def read_allowed(path):
     return rules
 
 
-def content(path):
-    """The bytes of a file. A gzip file gives its decompressed bytes."""
+def content(path, run):
+    """The bytes of a file. A gzip file gives its decompressed bytes. The run folder path becomes @RUN@."""
     data = path.read_bytes()
     if data[:2] == b"\x1f\x8b":
         try:
-            return gzip.decompress(data)
+            data = gzip.decompress(data)
         except (OSError, EOFError):
-            return data
-    return data
+            pass
+    data = data.replace(str(Path(run).resolve()).encode(), b"@RUN@")
+    return SCRATCH_FOLDER.sub(b"@SCRATCH@", data)
 
 
 def md5(data):
@@ -107,18 +114,19 @@ def main():
     failed = []
 
     for name in sorted(set(files_a) | set(files_b)):
-        if name not in files_b:
-            failed.append("only in %s: %s" % (args.run_a, name))
+        rule = next((r for r in rules if fnmatch.fnmatchcase(name, r[0])), None)
+        if name not in files_a or name not in files_b:
+            # a skip rule also lets a file exist in one run only
+            if rule is not None and rule[1] == "skip":
+                allowed.setdefault(rule[0], []).append(name)
+            else:
+                failed.append("only in %s: %s" % (args.run_a if name in files_a else args.run_b, name))
             continue
-        if name not in files_a:
-            failed.append("only in %s: %s" % (args.run_b, name))
-            continue
-        a = content(files_a[name])
-        b = content(files_b[name])
+        a = content(files_a[name], args.run_a)
+        b = content(files_b[name], args.run_b)
         if a == b:
             same += 1
             continue
-        rule = next((r for r in rules if fnmatch.fnmatchcase(name, r[0])), None)
         if rule is None:
             failed.append("DIFF %s (%s)" % (name, first_difference(a, b)))
         elif rule[1] == "skip" or stripped(a, rule[1][6:]) == stripped(b, rule[1][6:]):

@@ -1,6 +1,6 @@
 #! /bin/bash
 
-SNAKEFILE="../Snakefile"
+SNAKEFILE="../workflow/Snakefile"
 
 echo "Running the transXpress-trinity pipeline using snakemake"
 snakemake --snakefile $SNAKEFILE --cores 8 "$@"

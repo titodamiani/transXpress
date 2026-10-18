@@ -1,4 +1,4 @@
-checkpoint align_reads:
+rule align_reads:
   """
   Not run by default.
   Runs Trinity script aligning the reads to the transcriptome using Bowtie2
@@ -93,13 +93,16 @@ checkpoint align_reads:
     """
 
 
-checkpoint prepare_samples_for_IGV:
+rule prepare_samples_for_IGV:
   """
   Not run by default.
   Prepares the bam alignment files to be used by IGV by sorting
   them into results/expression/bowtie2_rsem/igv and indexing them.
   """
   input:
+    # align_reads writes one bowtie2.bam per replicate, and names only its marker as the output
+    "results/expression/bowtie2_rsem/transcriptome.fasta.bowtie2.ok"
+  params:
     alignment="results/expression/bowtie2_rsem/{sample}/bowtie2.bam"
   output:
     sorted_alignment="results/expression/bowtie2_rsem/igv/{sample}.sorted.bam",
@@ -115,16 +118,16 @@ checkpoint prepare_samples_for_IGV:
     runtime="4h"
   shell:
     """
-    samtools sort --threads {threads} -m 2G -o {output.sorted_alignment} {input.alignment} &> {log}
+    samtools sort --threads {threads} -m 2G -o {output.sorted_alignment} {params.alignment} &> {log}
     samtools index {output.sorted_alignment} &>> {log}
     """ 
 
 
 def get_igv(wildcards):
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
-  indeces = sorted(glob_wildcards("results/expression/bowtie2_rsem/{sample}/bowtie2.bam").sample)
-  completed = expand("results/expression/bowtie2_rsem/igv/{sample}.sorted.bam.bai", sample=indeces)
-  return completed
+  # one indexed alignment per replicate, the second column of the samples file
+  with open(check_samples(config["samples_file"])) as handle:
+    replicates = [line.split()[1] for line in handle if line.split()]
+  return expand("results/expression/bowtie2_rsem/igv/{sample}.sorted.bam.bai", sample=replicates)
 
 
 rule IGV:
@@ -172,17 +175,9 @@ rule trinity_DE:
     """
     TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
 
-
-    num_replicates=`awk '{{print $2}}' {input.samples} | sort | uniq | wc -l` &> {log}
-    num_samples=`awk '{{print $1}}' {input.samples} | sort | uniq | wc -l` &>> {log}
-    num_replicates_minus_samples=$((num_replicates - num_samples)) &>> {log}
-    if [ $num_replicates_minus_samples -gt 1 ] &>> {log}
-    then &>> {log}
-	    $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} &>> {log}
-    else &>> {log}
-	    echo "No biological replicates to run proper differential expression analysis, last-resorting to edgeR with --dispersion 0.1" &>> {log}
-      $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} --dispersion {config[dispersion]} &>> {log}
-    fi &>> {log}
+    # run_DE_analysis.pl estimates the dispersion for each pair of samples in which both samples have
+    # more than one replicate, and uses --dispersion for a pair in which a sample has one replicate
+    $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} --dispersion {config[dispersion]} &> {log}
     """
 
 
@@ -266,8 +261,9 @@ rule kallisto:
     else
       $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {config[strand_specific]} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
     fi
-    
-    $TRINITY_HOME/util/abundance_estimates_to_matrix.pl --est_method kallisto --name_sample_by_basedir --gene_trans_map transcriptome.gene_trans_map */abundance.tsv &>> "$LOG"
+
+    # the matrix columns follow the order of the files on the command line, here the order of the samples file
+    $TRINITY_HOME/util/abundance_estimates_to_matrix.pl --est_method kallisto --name_sample_by_basedir --gene_trans_map transcriptome.gene_trans_map $(awk '{{print $2 "/abundance.tsv"}}' samples_trimmed.txt) &>> "$LOG"
     if [ -f kallisto.isoform.TMM.EXPR.matrix ]; then
       cp -p kallisto.isoform.TMM.EXPR.matrix "$RUN/{output[0]}" &>> "$LOG"
     elif [ -f kallisto.isoform.TPM.not_cross_norm ]; then

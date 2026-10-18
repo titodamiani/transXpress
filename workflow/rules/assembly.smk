@@ -131,7 +131,10 @@ rule transcriptome_copy:
   gene to transcript map. Trinity writes the map. For rnaSPAdes the rule builds
   it from the transcript names: NODE_97_length_6237_cov_11.98_g8_i2 is isoform 2
   of gene g8, so the map line is "g8<TAB>NODE_97_length_6237_cov_11.98_g8_i2".
-  A name without _g<N>_i<M> at its end stops the rule.
+  A name without _g<N>_i<M> at its end stops the rule. Trinity writes the
+  same transcripts in another order in each run, so the copy of a Trinity
+  assembly holds them sorted by name in natural order (TRINITY_DN2 before
+  TRINITY_DN10), and its gene map follows that order.
   """
   input:
     unpack(transcriptome_copy_input)
@@ -146,8 +149,9 @@ rule transcriptome_copy:
     mem_mb=1024,
     runtime="4h"
   run:
-    shell("cp -p {input.transcriptome} {output.transcriptome} &> {log}")
     if config["assembler"] == "rnaspades":
+      shell("cp -p {input.transcriptome} {output.transcriptome} &> {log}")
       shell("""seqkit seq -n -i {output.transcriptome} 2>> {log} | awk 'BEGIN {{ OFS = "\\t" }} match($0, /_g[0-9]+_i[0-9]+$/) {{ split(substr($0, RSTART + 1), part, "_"); print part[1], $0; next }} {{ print "ERROR: transcript " $0 " has no _g<N>_i<M> at the end of its name, so its gene is unknown" > "/dev/stderr"; bad = 1 }} END {{ exit bad }}' > {output.gene_trans_map} 2>> {log}""")
     else:
-      shell("cp -p {input.gene_trans_map} {output.gene_trans_map} &>> {log}")
+      shell("seqkit sort --natural-order {input.transcriptome} > {output.transcriptome} 2> {log}")
+      shell("""seqkit seq -n -i {output.transcriptome} 2>> {log} | awk 'BEGIN {{ OFS = "\\t" }} NR == FNR {{ gene[$2] = $1; next }} $1 in gene {{ print gene[$1], $1; next }} {{ print "ERROR: transcript " $1 " is not in the Trinity gene map" > "/dev/stderr"; bad = 1 }} END {{ exit bad }}' {input.gene_trans_map} - > {output.gene_trans_map} 2>> {log}""")

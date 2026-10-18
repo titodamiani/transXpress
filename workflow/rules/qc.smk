@@ -236,10 +236,12 @@ rule busco:
     busco -m transcriptome -i {input.transcriptome} -o $(basename $OUT) --out_path $BUSCO_PATH $lineage_option -c {threads} {params.download_option} &>> {log}
     echo "BUSCO run completed successfully" &>> {log}
 
-    # pack the per-gene folders (thousands of small files) into one archive each
+    # pack the per-gene folders (thousands of small files) into one archive each. The archive holds
+    # the files in name order with a fixed time and owner, and gzip -n leaves out the name and time
+    # of the archive, so the same files give the same archive bytes.
     for d in $BUSCO_PATH/$(basename $OUT)/run_*/busco_sequences $BUSCO_PATH/$(basename $OUT)/run_*/hmmer_output; do
       if [ -d "$d" ]; then
-        tar -czf "$d.tar.gz" -C "$(dirname "$d")" "$(basename "$d")" &>> {log}
+        ( tar --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - -C "$(dirname "$d")" "$(basename "$d")" | gzip -n > "$d.tar.gz" ) &>> {log}
         rm -rf "$d" &>> {log}
       fi
     done

@@ -11,7 +11,7 @@ input, output, log = snakemake.input, snakemake.output, snakemake.log
 # tmhmm.py writes its result files into the current directory, so each chunk works in its own temporary directory
 # in the job's temporary folder (see job_tmpdir). The directory and the per-protein files in it are deleted when
 # the chunk is done
-with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory(dir=snakemake.resources["tmpdir"]) as tmp_dir:
+with open(input[0], "r") as input_handle, open(output[0], "w") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory(dir=snakemake.resources["tmpdir"]) as tmp_dir:
   log_handle.write("work folder: " + tmp_dir + "\n")
   log_handle.flush()
 
@@ -32,9 +32,9 @@ with open(input[0], "r") as input_handle, open(output[0], "a+") as output_handle
     fasta_file =  os.path.join(tmp_dir, record.id + ".fasta")
     Bio.SeqIO.write(record, fasta_file, "fasta")
 
-    # executing the tmhmm.py on created fasta
+    # executing the tmhmm.py on created fasta, a failure of tmhmm.py stops the job
     cmd_tmhmm = ['tmhmm', '-f', fasta_file]
-    subprocess.run(cmd_tmhmm, stdout = log_handle, stderr = log_handle, cwd = tmp_dir)
+    subprocess.run(cmd_tmhmm, stdout = log_handle, stderr = log_handle, cwd = tmp_dir, check = True)
 
     # 3 files are created afterwards in tmp_dir
     # record.id.summary     record.id.annotation    record.id.plot

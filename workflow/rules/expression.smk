@@ -232,7 +232,7 @@ rule kallisto:
     elif [ -f kallisto.isoform.TPM.not_cross_norm ]; then
       cp -p kallisto.isoform.TPM.not_cross_norm "$RUN/{output.isoform}" &>> "$LOG"
     else
-      echo Neither kallisto.isoform.TMM.EXPR.matrix or kallisto.isoform.TPM.not_cross_norm were produced
+      echo "Neither kallisto.isoform.TMM.EXPR.matrix nor kallisto.isoform.TPM.not_cross_norm was produced" &>> "$LOG"
       exit 1
     fi
     if [ -f kallisto.gene.TMM.EXPR.matrix ]; then
@@ -240,7 +240,7 @@ rule kallisto:
     elif [ -f kallisto.gene.TPM.not_cross_norm ]; then
       cp -p kallisto.gene.TPM.not_cross_norm "$RUN/{output.gene}" &>> "$LOG"
     else
-      echo Neither kallisto.gene.TMM.EXPR.matrix or kallisto.gene.TPM.not_cross_norm were produced
+      echo "Neither kallisto.gene.TMM.EXPR.matrix nor kallisto.gene.TPM.not_cross_norm was produced" &>> "$LOG"
       exit 1
     fi
 

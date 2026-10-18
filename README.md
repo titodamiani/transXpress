@@ -2,94 +2,143 @@
 
 transXpress: a [Snakemake](https://snakemake.readthedocs.io/en/stable/) pipeline for streamlined de novo transcriptome assembly and annotation
 
-## Intro
+transXpress trims RNA-Seq reads, assembles them with Trinity or rnaSPAdes, finds the open reading frames (ORFs, the stretches of a transcript that code for a protein) with TransDecoder, annotates the transcripts and proteins, and estimates the expression of each transcript.
+
+## Folder layout
+
+| Path | Content |
+|---|---|
+| `workflow/Snakefile` | the main workflow file. It names the main image (`MAIN_IMAGE`), includes the rule files and holds the default target `all` |
+| `workflow/rules/*.smk` | the rules, one file per step: `common.smk` (config checks, `run_info`, `clean`, `delete_intermediates`), `databases.smk`, `trim.smk`, `qc.smk`, `assembly.smk`, `orfs.smk`, `expression.smk`, `annotation.smk` |
+| `workflow/scripts/` | the Python scripts of the `script:` rules, and `scratch.sh`, the shell functions of the rules that work on the node's local disk |
+| `workflow/envs/` | one conda env file per tool group (`<env>.yaml`), and for each one the pin file `<env>.linux-64.pin.txt`, the exact list of packages for linux-64. `tmhmm.post-deploy.sh` adds `tmhmm.py` from PyPI to the tmhmm env. `default.yaml` is the main env, which holds Snakemake |
+| `workflow/schemas/config.schema.yaml` | the type and the default of each config key. Snakemake checks `config.yaml` against it at the start of a run |
+| `config.yaml` | the config of a run, with a comment for each key. Copy it into each run folder |
+| `profiles/` | the Snakemake options of each place where jobs run: `local`, `slurm`, `aurum` |
+| `Dockerfile` | the recipe of the main image |
+| `containers/` | `signalp.def` and `targetp.def`, the recipes of the private SignalP and TargetP images |
+| `tests/` | the test data, the test config, `make_run.sh`, `compare_runs.py` and `allowed_diffs.tsv` |
+| `resources/adapters.fasta` | the adapter sequences for Trimmomatic |
+| `.github/workflows/` | `test.yml` (the test runs) and `image.yml` (the pin files and the main image) |
 
 ## Dependencies
 
-transXpress requires:
-* snakemake 9.27.0 with the executor plugins `slurm` and `cluster-generic` (install via conda, `workflow/envs/default.yaml`)
-* fastqc (install via conda, `envs/qc.yaml`)
-* multiqc (install via conda, `envs/qc.yaml`)
-* trimmomatic (install via conda, `envs/trimmomatic.yaml`)
-* Trinity (install via conda, `trinity_utils.yaml`)
-* SPAdes (install via conda, `envs/rnaspades.yaml`)
-* TransDecoder (install via conda, `transdecoder.yaml`)
-* BioPython (install via conda, `envs/default.yaml`)
-* samtools (install via conda, `envs/trinity_utils.yaml`)
-* bowtie2 (install via conda, `envs/trinity_utils.yaml`)
-* infernal (install via conda, `envs/rfam.yaml`)
-* HMMER (install via conda, `envs/pfam.yaml`)
-* kallisto (install via conda, `envs/trinity_utils.yaml`)
-* NCBI BLAST+ (install via conda, `envs/blast.yaml`)
-* R (install via conda, `envs/trinity_utils.yaml`)
-* edgeR (install via conda, `envs/trinity_utils.yaml`)
-* seqkit (install via conda, `envs/default.yaml`, `envs/rnaspades.yaml`)
-* wget (install via conda, `envs/default.yaml`)
-* sra-tools (install via conda, `envs/default.yaml`)
-* tidyverse (required for Trinity, install via conda, `envs/trinity_utils.yaml`)
-* python (install via conda, `workflow/envs/default.yaml`)
-* busco 4+ (install via conda, `envs/busco.yaml`)
-* rsem (install via conda, `envs/trinity_utils.yaml`)
-* [SignalP 6.0](https://services.healthtech.dtu.dk/service.php?SignalP)
-* [TargetP 2.0](https://services.healthtech.dtu.dk/service.php?TargetP-2.0)
-* tmhmm.py (install via pip, `workflow/envs/tmhmm.yaml`)
-* basic Linux utitilies: split, awk, cut, gzip
+transXpress needs conda (Miniforge3) and Snakemake. Snakemake installs every tool below, in one of two ways: from the pin files into conda envs, or from the main image (see [Software: conda mode and image mode](#software-conda-mode-and-image-mode)).
 
-The conda dependencies are installed in smaller conda environments automatically by transXpress (based on yaml files in the `envs` directory). 
+| Env file in `workflow/envs/` | Tools |
+|---|---|
+| `default.yaml` (the main env) | Python 3.11, Snakemake 9.27.0, the executor plugins `slurm` 2.8.0 and `cluster-generic` 1.0.9, Biopython, pandas, matplotlib, seqkit, wget, sra-tools |
+| `trimmomatic.yaml` | Trimmomatic 0.41 |
+| `qc.yaml` | FastQC 0.12.1, MultiQC 1.35 |
+| `rnaspades.yaml` | SPAdes 4.3.0, seqkit 2.14.0 |
+| `trinity_utils.yaml` | Trinity 2.13.2, salmon, kallisto 0.48.0, bowtie2, samtools, RSEM, R 4.1 with edgeR and tidyverse |
+| `transdecoder.yaml` | TransDecoder 6.0.0 |
+| `busco.yaml` | BUSCO 6.1.0 |
+| `pfam.yaml` | HMMER 3.4 |
+| `rfam.yaml` | Infernal 1.1.5 |
+| `blast.yaml` | NCBI BLAST+ 2.17.0 |
+| `tmhmm.yaml` | tmhmm.py 1.2.1 |
+| `signalp.yaml`, `targetp.yaml` | the base of the named conda envs `signalp` and `targetp`. [SignalP 6.0](https://services.healthtech.dtu.dk/services/SignalP-6.0/) and [TargetP 2.0](https://services.healthtech.dtu.dk/services/TargetP-2.0/) have a DTU licence, so you install them yourself (see [SignalP and TargetP](#signalp-and-targetp)) |
+
+The pin file of each env gives the exact version and build of every package. `results/run_info.txt` lists them for each run.
 
 ## Installation
 
-1. Checkout the transXpress code into the folder in which you will be performing your assembly:
-~~~~
-git clone https://github.com/transXpress/transXpress.git
-~~~~
+1. Get the transXpress code:
+   ~~~~
+   git clone https://github.com/transXpress/transXpress.git
+   ~~~~
 
-2. Install [Miniforge3](https://github.com/conda-forge/miniforge)
-~~~~
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
-bash Miniforge3-Linux-x86_64.sh
-rm Miniforge3-Linux-x86_64.sh
-~~~~
-All commands below use `conda`. conda 23.10 and later use the libmamba solver by default, so the solve speed is the same as with mamba. Snakemake builds the rule environments with `conda`, its default frontend.
+2. Install [Miniforge3](https://github.com/conda-forge/miniforge):
+   ~~~~
+   curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
+   bash Miniforge3-Linux-x86_64.sh
+   rm Miniforge3-Linux-x86_64.sh
+   ~~~~
+   All commands below use `conda`. conda 23.10 and later use the libmamba solver by default, so the solve speed is the same as with mamba. Snakemake builds the rule environments with `conda`, its default frontend.
 
-3. To ensure correct versions of R packages will be used unset R_LIBS_SITE
-~~~~
-unset R_LIBS_SITE
-~~~~
+3. To make sure that the pipeline uses the R packages of its envs, unset `R_LIBS_SITE`:
+   ~~~~
+   unset R_LIBS_SITE
+   ~~~~
 
-4. Setup main transXpress conda environment:
-~~~~
-conda config --set channel_priority strict
-conda env create --name transxpress --file workflow/envs/default.yaml
-conda activate transxpress
-~~~~
-`workflow/envs/default.yaml` holds Snakemake and its executor plugins for Slurm (`slurm`) and for other schedulers (`cluster-generic`).
+4. Make the main transXpress env:
+   ~~~~
+   conda config --set channel_priority strict
+   conda env create --name transxpress --file workflow/envs/default.yaml
+   conda activate transxpress
+   ~~~~
+   On linux-64, `conda create --name transxpress --file workflow/envs/default.linux-64.pin.txt` gives the exact packages of the pin file.
 
-5. Choose a folder for the conda environments of the pipeline rules, so that all your runs share them. Give it to Snakemake with `--conda-prefix /path/to/folder`, or as `conda-prefix: /path/to/folder` in your profile (see [Running transXpress](#running-transxpress)). Without it, Snakemake builds the environments in `.snakemake/conda` in each run folder.
+5. Get the rule envs: pull the main image (image mode) or build the conda envs (conda mode). See [Software: conda mode and image mode](#software-conda-mode-and-image-mode).
 
+6. Install SignalP and TargetP, or turn them off with `signalp: ""` and `targetp: ""`. See [SignalP and TargetP](#signalp-and-targetp).
 
-6. Create a tab-separated file called *samples.txt* in the assembly directory describing where to find your raw read FASTQ files. Create this file with the following contents:
-      ~~~
-      cond_A      cond_A_rep1 A_rep1_left.fq    A_rep1_right.fq
-      cond_A      cond_A_rep2 A_rep2_left.fq    A_rep2_right.fq
-      cond_B      cond_B_rep1 B_rep1_left.fq    B_rep1_right.fq
-      cond_B      cond_B_rep2 B_rep2_left.fq    B_rep2_right.fq
-      ~~~
-    
+7. Make a run folder. Put a copy of `config.yaml` there, and a tab-separated file called `samples.txt` that says where to find the raw read FASTQ files:
+   ~~~
+   cond_A      cond_A_rep1 A_rep1_left.fq    A_rep1_right.fq
+   cond_A      cond_A_rep2 A_rep2_left.fq    A_rep2_right.fq
+   cond_B      cond_B_rep1 B_rep1_left.fq    B_rep1_right.fq
+   cond_B      cond_B_rep2 B_rep2_left.fq    B_rep2_right.fq
+   ~~~
+   The file names must not hold spaces. [tests/test_samples.txt](./tests/test_samples.txt) is an example. `sra_download.sh` downloads reads from SRA, where SRR0000000 is an SRA readset ID, for example SRR3883773:
+   ~~~~
+   ./sra_download.sh <SRR0000000> <SRR0000001> <...>
+   ~~~~
 
-* You can download reads from SRA with provided script:
-    ~~~~
-    ./sra_download.sh <SRR0000000> <SRR0000001> <...>
-    ~~~~
-    where SRR0000000 is an SRA readset ID. E.g., SRR3883773
+8. Read `config.yaml` and set the keys for your data. Check at least `assembler`, `strand_specific`, `lineage`, `signalp` and `targetp`. See [Configuration](#configuration).
 
-* See the tests directory for an example of a samples file: [test_samples.txt](./tests/test_samples.txt)
+## Software: conda mode and image mode
 
-    
-7. Take a look at the configuration file *config.yaml* and update as required (you should check: **assembler, targetp, signalp, strand_specific, lineage**).
+Every rule that runs a tool names its env file with `conda:`. Snakemake can get these envs in two ways.
 
+| Mode | Option | Where the rule envs come from |
+|---|---|---|
+| conda mode | `--software-deployment-method conda` (`profiles/local`, `profiles/slurm`) | Snakemake builds each env in the conda prefix from its pin file `<env>.linux-64.pin.txt`. On another platform it builds the env from the env file |
+| image mode | `--software-deployment-method conda apptainer` (`profiles/aurum`) | Apptainer runs each rule in the main image, which holds every rule env, built from the pin files |
 
-8. Setup other conda environments (This will take a while):
+On one host, both modes give the same results. The CI job `t1-image` checks this (see [Tests](#tests)).
+
+A rule without a `conda:` env runs in the main env on the host, in both modes. These rules use a Python script of `workflow/scripts/`, Python code in the rule, or a tool of the main env such as seqkit. So the main env (`transxpress`) is necessary in both modes.
+
+### The main image
+
+`MAIN_IMAGE` at the top of `workflow/Snakefile` names the main image:
+~~~
+MAIN_IMAGE = "docker://ghcr.io/titodamiani/transxpress:1.0.0"
+containerized: MAIN_IMAGE
+~~~
+The image is public on ghcr.io. It holds the 10 rule envs of the `Dockerfile`, each one built from its pin file. Snakemake finds an env in the image at `/conda-envs/<hash>`. The hash covers the env file, its pin file and its post-deploy script, so a change to any of these three files needs another `Dockerfile` and another tag in `MAIN_IMAGE` (see [Adding a tool](#adding-a-tool)).
+
+The workflow `.github/workflows/image.yml` builds the image and pushes it to ghcr.io. `test.yml` calls it on each push to master and on each pull request. It has two jobs:
+* `pins` makes the pin file of each env file that has none, with `conda list --explicit --md5` in a clean linux-64 conda. It uploads the pin files as the artifact `pins` and fails, so that you commit them. A manual run of `image.yml` makes the pin files of all env files again and builds no image. An env file with a `name:` line (`signalp.yaml`, `targetp.yaml`) is a named env and gets no pin file.
+* `image` checks the env paths of the `Dockerfile` against `snakemake --containerize`, then builds the image and pushes it under the tag of `MAIN_IMAGE`. When ghcr.io holds that tag from the same `Dockerfile`, the job builds nothing. When ghcr.io holds that tag from another `Dockerfile`, the job stops.
+
+### Pull the main image first
+
+Pull the image into an image folder before the first run. Without the file, the main Snakemake process pulls the image at the start of the run. The download is 5.2 GB and the SIF file (the single-file image format of Apptainer) is 3.1 GiB. The pull makes the SIF file with `mksquashfs`, which needed about 27 GB of memory on the Aurum cluster, so on a cluster pull it in a job with enough memory.
+
+Snakemake looks for the image as `<md5 of the MAIN_IMAGE URL>.simg` in the folder of `--apptainer-prefix`. Without that option, the folder is `.snakemake/singularity` in the run folder.
+~~~
+IMAGES=/path/to/images
+URL=docker://ghcr.io/titodamiani/transxpress:1.0.0
+apptainer pull "$IMAGES/$(printf %s "$URL" | md5sum | cut -d ' ' -f 1).simg" "$URL"
+~~~
+For 1.0.0 the file name is `0e79edd4e66970b5267c55f94cb6b128.simg`. Put the image folder in the profile of your site:
+~~~
+software-deployment-method:
+  - conda
+  - apptainer
+apptainer-prefix: /path/to/images
+apptainer-args: "--bind /path/to/transXpress,/path/to/databases,/path/to/reads"
+~~~
+Apptainer shows a job only some folders of the host, such as `$HOME`, `/tmp`, the run folder and the `--bind` folders. The Apptainer config of a site can add more. A job in the image reads the scripts and the adapters of the transXpress folder, the databases of a shared `db_dir`, the reads and its temporary folder. Bind each of these that is outside the run folder. `profiles/aurum/config.yaml` is an example.
+
+### Conda mode
+
+Choose a folder for the rule envs, so that all your runs share them. Give it to Snakemake with `--conda-prefix /path/to/folder`, or as `conda-prefix: /path/to/folder` in your profile. Without it, Snakemake builds the envs in `.snakemake/conda` in each run folder.
+
+Build the envs before the first run (this takes a while):
 ~~~~
 snakemake --profile /path/to/transXpress/profiles/local --conda-prefix /path/to/folder --conda-create-envs-only
 ~~~~
@@ -97,41 +146,170 @@ On a cluster, build them in a job and not on the shared login node, for example 
 ~~~~
 sbatch --time=4:00:00 --mem=24G --cpus-per-task=4 -o envs.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate transxpress && snakemake --profile /path/to/transXpress/profiles/local --conda-prefix /path/to/folder --conda-create-envs-only'
 ~~~~
-The environments of the annotation rules that come after the split checkpoints (rfam and pfam with a shared `db_dir`) are built by the main Snakemake process during the first run.
-When the environments are in place, delete the package caches, which hold a second copy of every package:
+The main Snakemake process builds the envs of the annotation rules that come after the split checkpoints during the first run. When the envs are in place, delete the package caches, which hold a second copy of every package:
 ~~~~
 conda clean --all --yes
 pip cache purge
 ~~~~
 
-9. Install SignalP 6.0 (fast):
-      * Download SignalP 6.0 fast from https://services.healthtech.dtu.dk/services/SignalP-6.0/ (go to Downloads)
-      * Unpack and install signalp:
-        ~~~~
-         conda env create -f envs/signalp.yaml
-         conda activate signalp
-         tar zxvf signalp-6.0h.fast.tar.gz
-         cd signalp6_fast
-         pip install signalp-6-package/
-         SIGNALP_DIR=$(python -c "import signalp; import os; print(os.path.dirname(signalp.__file__))" )
-         cp -r signalp-6-package/models/* $SIGNALP_DIR/model_weights/
-         conda deactivate
-        ~~~~
-        (make sure the conda python is used, or use the full path to python from your conda installation)
+## SignalP and TargetP
 
-10. Install TargetP 2.0:
-      * Download TargetP 2.0 from https://services.healthtech.dtu.dk/software.php
-      * extract the tarball and add the targetp `bin` folder to the PATH of the targetp environment, with an activation script:
-        ~~~~
-         conda env create -f envs/targetp.yaml
-         conda activate targetp
-         tar zxvf targetp-2.0.Linux.tar.gz
-         mkdir -p "$CONDA_PREFIX/etc/conda/activate.d" "$CONDA_PREFIX/etc/conda/deactivate.d"
-         printf 'export _TARGETP_OLD_PATH="$PATH"\nexport PATH="$PATH:%s/targetp-2.0/bin"\n' "$(pwd)" > "$CONDA_PREFIX/etc/conda/activate.d/targetp.sh"
-         printf 'export PATH="$_TARGETP_OLD_PATH"\nunset _TARGETP_OLD_PATH\n' > "$CONDA_PREFIX/etc/conda/deactivate.d/targetp.sh"
-         conda deactivate
-        ~~~~
-        (the script holds the full path of the `targetp-2.0` folder. If you move the folder, edit the path in `$CONDA_PREFIX/etc/conda/activate.d/targetp.sh`.)
+SignalP 6.0 predicts signal peptides. TargetP 2.0 predicts the targeting peptides of proteins. Both come from DTU Health Tech under a licence that forbids sharing them, so each licensee installs them. Each tool runs in one of two ways:
+
+| Key in `config.yaml` | Value | The rule runs in |
+|---|---|---|
+| `signalp_container` | `""` | the named conda env `signalp` |
+| `signalp_container` | a path to a `.sif` | that Apptainer image, with no conda env |
+| `targetp_container` | `""` | the named conda env `targetp` |
+| `targetp_container` | a path to a `.sif` | that Apptainer image, with no conda env |
+
+An image path needs `apptainer` in the `software-deployment-method` of the profile. Snakemake stops at the start when the file is missing or apptainer is not a deployment method. `signalp: ""` or `targetp: ""` turns the tool off, and the rule then needs neither an env nor an image.
+
+### The SignalP and TargetP images
+
+`containers/signalp.def` and `containers/targetp.def` are Apptainer recipes. Each one builds a conda env of fixed packages on the base image `condaforge/miniforge3:26.7.2-0` and copies the DTU package into it.
+
+1. Download SignalP 6.0 fast and TargetP 2.0 from DTU, and unpack them.
+2. Build the images:
+   ~~~
+   apptainer build --fakeroot --build-arg SIGNALP_PACKAGE=/path/to/signalp6_fast/signalp-6-package signalp.sif containers/signalp.def
+   apptainer build --fakeroot --build-arg TARGETP_DIR=/path/to/targetp-2.0 targetp.sif containers/targetp.def
+   ~~~
+   The SignalP image is about 4.6 GiB and the TargetP image about 0.8 GiB. The SignalP build needed about 12 GB of memory on the Aurum cluster.
+3. Give the paths in `config.yaml`:
+   ~~~
+   signalp_container: "/path/to/images/signalp.sif"
+   targetp_container: "/path/to/images/targetp.sif"
+   ~~~
+
+Keep the images private. `results/run_info.txt` records the path, the size, the SIF ID and the build time of each image.
+
+### The named conda envs
+
+1. SignalP 6.0 fast. Download it from https://services.healthtech.dtu.dk/services/SignalP-6.0/ (go to Downloads), then:
+   ~~~~
+   conda env create -f workflow/envs/signalp.yaml
+   conda activate signalp
+   tar zxvf signalp-6.0h.fast.tar.gz
+   cd signalp6_fast
+   pip install signalp-6-package/
+   SIGNALP_DIR=$(python -c "import signalp; import os; print(os.path.dirname(signalp.__file__))" )
+   cp -r signalp-6-package/models/* $SIGNALP_DIR/model_weights/
+   conda deactivate
+   ~~~~
+   Make sure that the conda python runs, or use the full path to python from your conda installation.
+
+2. TargetP 2.0. Download it from https://services.healthtech.dtu.dk/services/TargetP-2.0/, unpack it, and add the targetp `bin` folder to the PATH of the targetp env with an activation script:
+   ~~~~
+   conda env create -f workflow/envs/targetp.yaml
+   conda activate targetp
+   tar zxvf targetp-2.0.Linux.tar.gz
+   mkdir -p "$CONDA_PREFIX/etc/conda/activate.d" "$CONDA_PREFIX/etc/conda/deactivate.d"
+   printf 'export _TARGETP_OLD_PATH="$PATH"\nexport PATH="$PATH:%s/targetp-2.0/bin"\n' "$(pwd)" > "$CONDA_PREFIX/etc/conda/activate.d/targetp.sh"
+   printf 'export PATH="$_TARGETP_OLD_PATH"\nunset _TARGETP_OLD_PATH\n' > "$CONDA_PREFIX/etc/conda/deactivate.d/targetp.sh"
+   conda deactivate
+   ~~~~
+   The script holds the full path of the `targetp-2.0` folder. If you move the folder, edit the path in `$CONDA_PREFIX/etc/conda/activate.d/targetp.sh`.
+
+## Configuration
+
+Each run folder holds a `config.yaml`. The `config.yaml` of the repository explains each key in a comment. `workflow/schemas/config.schema.yaml` gives the type of each key and the default of a key that the file leaves out. A value of the wrong type stops the run at the start.
+
+| Key | Value in `config.yaml` | Meaning |
+|---|---|---|
+| `samples_file` | `"samples.txt"` | the samples file: condition, replicate, left reads, right reads |
+| `trimmomatic_parameters` | `"ILLUMINACLIP:{adapters}:2:30:10 ..."` | the Trimmomatic steps. `{adapters}` stands for `resources/adapters.fasta` |
+| `assembler` | `"trinity"` | `trinity` or `rnaspades` |
+| `trinity_parameters` | `"--seqType fq"` | more options for Trinity |
+| `strand_specific` | `""` | the strand option of the assembler, for example `"--SS_lib_type RF"` (Trinity) or `"--ss rf"` (rnaSPAdes). Also used for the read alignment |
+| `kmers` | `""` | rnaSPAdes only: the k-mer sizes, for example `"-k 21,33,55"`. `""` lets rnaSPAdes choose |
+| `rnaspades_filter` | `"default"` | rnaSPAdes only: the transcript set that becomes `transcriptome.fasta`: `default`, `hard` or `soft` |
+| `scratch` | `""` | the environment variable that holds a folder on the node's local disk. See [Working files on the node's local disk](#working-files-on-the-nodes-local-disk) |
+| `transdecoder_orfs` | `"all"` | the ORF set of `transcriptome.pep`: `all` or `single_best` |
+| `annotated_fasta_prefix` | `""` | a text put before each sequence name in `transcriptome_annotated.*`, as `<prefix>\|<name>`, for example the species |
+| `e_value_threshold` | `"1e-6"` | the E-value limit of the Pfam, Rfam and BLAST searches |
+| `dispersion` | `"0.1"` | the edgeR dispersion for a pair of conditions that has a condition with one replicate |
+| `signalp` | `"eukarya"` | the SignalP organism group: `eukarya` or `other`. `""` turns SignalP off |
+| `targetp` | `"non-pl"` | the TargetP organism group: `pl` (plant) or `non-pl`. `""` turns TargetP off |
+| `signalp_container`, `targetp_container` | `""` | see [SignalP and TargetP](#signalp-and-targetp) |
+| `lineage` | `"viridiplantae_odb12"` | the BUSCO lineage dataset |
+| `db_dir` | `"resources/db"` | the database folder. See [Annotation databases](#annotation-databases) |
+| `pfam_release`, `rfam_release`, `sprot_release` | `"38.2"`, `"15.1"`, `"2026_03"` | the database releases. Keep the quotes |
+| `annotation_chunk_fasta`, `annotation_chunk_orfs`, `annotation_chunk_pep` | `1000`, `5000`, `5000` | the number of sequences in each annotation job. See [Number of jobs](#number-of-jobs) |
+| `<rule>_memory`, `<rule>_threads`, `<rule>_runtime` | see the file | the memory in GB, the thread count and the time limit of `rnaspades`, `trinity`, `align_reads`, `kallisto`, `busco`, `transdecoder_predict` and `sprot_blastx` (the rule `sprot_blastx_parallel`) |
+
+The figures of the `<rule>_*` keys suit about 420 million read pairs (18 Illumina libraries). Lower them for a smaller dataset.
+
+## Running transXpress
+
+Run the pipeline in a run folder that holds `config.yaml` and the samples file. A profile is a folder in `profiles/` whose `config.yaml` holds the Snakemake options of the place where the jobs run:
+
+| Profile | Where the jobs run | Rule envs |
+|---|---|---|
+| `profiles/local` | on this computer, with all its cores | conda mode |
+| `profiles/slurm` | as Slurm jobs, through the Snakemake executor plugin `slurm`, at most 50 jobs in the queue | conda mode |
+| `profiles/aurum` | as Slurm jobs on the Aurum cluster of IOCB Prague: `profiles/slurm` with the Aurum settings | image mode |
+
+~~~~
+conda activate transxpress
+cd /path/to/run-folder
+snakemake --profile /path/to/transXpress/profiles/local
+~~~~
+Each profile names the `workflow/Snakefile` of its own copy of transXpress (`snakefile: ../../workflow/Snakefile`), so the command works in any run folder. Options on the command line come after the profile, for example `--conda-prefix /path/to/folder`. A command line option replaces the profile value of the same option.
+
+Each rule gives its thread count and two resources: `mem_mb`, the memory in MB, and `runtime`, the time limit. The rules whose size follows the dataset take these from `config.yaml`. The other rules keep fixed figures in their rule files.
+
+### A profile for your site
+
+1. Copy `profiles/slurm` to `profiles/<site>`. Keep it in `profiles/`, so that `snakefile: ../../workflow/Snakefile` finds the workflow.
+2. Add the sbatch flags of your cluster as resources. See [Flags that belong to your cluster](#flags-that-belong-to-your-cluster).
+3. For image mode, add `software-deployment-method`, `apptainer-prefix` and `apptainer-args`. See [Pull the main image first](#pull-the-main-image-first).
+4. For conda mode, add `conda-prefix` with the folder of the shared rule envs.
+5. To work on the node's local disk, add the `scratch` key under `config:`. See [Working files on the node's local disk](#working-files-on-the-nodes-local-disk).
+
+`profiles/aurum/config.yaml` has all of these, each with a comment.
+
+### Other schedulers
+
+These two setups are not tested.
+
+LSF: install the plugin `snakemake-executor-plugin-lsf` in the `transxpress` environment, and make a profile from `profiles/slurm` with these lines in place of `executor: slurm`:
+~~~~
+executor: lsf
+default-resources:
+  lsf_project: "'<your LSF project>'"
+  lsf_queue: "'<your LSF queue>'"
+~~~~
+
+PBS: the plugin `cluster-generic` is in the `transxpress` environment. It submits each job with the command you give. Make a profile from `profiles/slurm` with these lines in place of `executor: slurm`:
+~~~~
+executor: cluster-generic
+cluster-generic-submit-cmd: "qsub -j oe -o logs/ -l select=1:ncpus={threads}:mem={resources.mem_mb}mb -l walltime={resources.runtime}:00"
+~~~~
+`runtime` is in minutes, so `{resources.runtime}:00` is a PBS time in minutes and seconds. Without a status command (`cluster-generic-status-cmd`), Snakemake learns that a job ended only from a marker file the job writes, so a job that the scheduler stops leaves Snakemake waiting.
+
+### Running the main Snakemake process on a Slurm cluster
+
+The main Snakemake process needs the `transxpress` environment. Run it in its own job and activate the environment first. Replace the paths with yours:
+~~~
+cd /path/to/run-folder
+sbatch --time=7-00:00:00 --mem=24G --cpus-per-task=2 -o main.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate /path/to/transxpress-env && snakemake --profile /path/to/transXpress/profiles/slurm'
+~~~
+The time is the limit for the whole run, so it has to be longer than the longest job: `trinity` asks for 7 days. In conda mode, the main process builds the environments of the annotation rules during the run, and a build needs about 10 GB, so the job asks for 24 GB.
+
+Inside a job, the `slurm` plugin prints a warning and removes the `SLURM_` variables of the main job from its own environment, so the jobs it submits get their own settings.
+
+### Running specific steps
+
+You can run specific steps of the pipeline by specifying a rule or a resulting file:
+~~~
+# run only the rules that make the FastQC and MultiQC report of the input data, to check its quality
+snakemake --profile /path/to/transXpress/profiles/slurm results/qc/multiqc_before_trim.txt
+~~~
+~~~
+# run only the rules to produce the samples_trimmed.txt file
+snakemake --profile /path/to/transXpress/profiles/slurm results/trimmomatic/samples_trimmed.txt
+~~~
 
 ## Output layout
 
@@ -180,6 +358,7 @@ The files most analyses start from:
 | `results/expression/transcriptome_expression_isoform.tsv`, `_gene.tsv` | the TMM-normalized TPM of each transcript and gene, or the TPM when TMM is not possible |
 | `results/expression/kallisto/kallisto.{isoform,gene}.counts.matrix` | the estimated read counts |
 | `results/qc/busco_report.txt` | the BUSCO score of the assembly |
+| `results/run_info.txt` | the host, the processor, the transXpress commit, the deployment methods, the images and the version of each tool |
 
 Two rules delete files, and neither runs unless you name it:
 
@@ -195,74 +374,12 @@ snakemake --profile /path/to/transXpress/profiles/local delete_intermediates
 ## Notes on results
 
 * Swiss-Prot, Pfam and Rfam have fixed releases, set in `config.yaml`. See [Annotation databases](#annotation-databases).
-* With the default `db_dir: "resources/db"`, BUSCO downloads the newest dataset of its lineage, so BUSCO scores can differ between runs months apart. A shared `db_dir` keeps one lineage dataset for every run.
+* With the default `db_dir: "resources/db"`, BUSCO downloads the latest dataset of its lineage, so BUSCO scores can differ between runs months apart. A shared `db_dir` keeps one lineage dataset for every run.
 * The pipeline reads and writes the paths in [Output layout](#output-layout). A run folder that holds its files at other paths runs every step again, so start each run in its own folder.
 * The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `results/run_info.txt` records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades` and `trinity` name the machine each one ran on.
 * TransDecoder and Trinity each have a Perl script that writes records in Perl hash order, which changes in each run. The TransDecoder rules, `kallisto` and `trinity_stats` set `PERL_HASH_SEED=0`, so two runs write the same records in the same order. Upstream reports: [TransDecoder/TransDecoder#212](https://github.com/TransDecoder/TransDecoder/issues/212), [trinityrnaseq/trinityrnaseq#1478](https://github.com/trinityrnaseq/trinityrnaseq/issues/1478).
 * Trinity does not repeat an assembly: two runs on the same reads give slightly different transcripts. On one piper09 library, two runs shared 113127 of about 113370 transcripts. `trinity_parameters: "--inchworm_cpu 1"` gives identical runs on the test data, but not on real data. For a repeatable assembly, use rnaSPAdes. Details in [issue 22](https://github.com/titodamiani/transXpress/issues/22).
-
-## Running transXpress
-
-Run the pipeline in a run folder that holds `config.yaml` and the samples file. A profile is a folder in `profiles/` whose `config.yaml` holds the Snakemake options of the place where the jobs run:
-
-| Profile | Where the jobs run |
-|---|---|
-| `profiles/local` | on this computer, with all its cores |
-| `profiles/slurm` | as Slurm jobs, through the Snakemake executor plugin `slurm` |
-| `profiles/aurum` | as Slurm jobs on the Aurum cluster of IOCB Prague: `profiles/slurm` with the Aurum settings |
-
-~~~~
-conda activate transxpress
-cd /path/to/run-folder
-snakemake --profile /path/to/transXpress/profiles/local
-~~~~
-Each profile names the `workflow/Snakefile` of its own copy of transXpress, so the command works in any run folder. Options on the command line come after the profile, for example `--conda-prefix /path/to/folder`. A command line option replaces the profile value of the same option.
-
-For your own cluster, copy `profiles/slurm` to `profiles/<site>` and add your site flags, see [Flags that belong to your cluster](#flags-that-belong-to-your-cluster).
-
-Each rule gives its thread count and two resources: `mem_mb`, the memory in MB, and `runtime`, the time limit. The rules whose size follows the dataset take these from `config.yaml`, for example `rnaspades_memory` (in GB), `rnaspades_threads` and `rnaspades_runtime`. The other rules keep fixed figures in their rule files.
-
-### Other schedulers
-
-These two setups are not tested.
-
-LSF: install the plugin `snakemake-executor-plugin-lsf` in the `transxpress` environment, and make a profile from `profiles/slurm` with these lines in place of `executor: slurm`:
-~~~~
-executor: lsf
-default-resources:
-  lsf_project: "'<your LSF project>'"
-  lsf_queue: "'<your LSF queue>'"
-~~~~
-
-PBS: the plugin `cluster-generic` is in the `transxpress` environment. It submits each job with the command you give. Make a profile from `profiles/slurm` with these lines in place of `executor: slurm`:
-~~~~
-executor: cluster-generic
-cluster-generic-submit-cmd: "qsub -j oe -o logs/ -l select=1:ncpus={threads}:mem={resources.mem_mb}mb -l walltime={resources.runtime}:00"
-~~~~
-`runtime` is in minutes, so `{resources.runtime}:00` is a PBS time in minutes and seconds. Without a status command (`cluster-generic-status-cmd`), Snakemake learns that a job ended only from a marker file the job writes, so a job that the scheduler stops leaves Snakemake waiting.
-
-### Running the main Snakemake process on a Slurm cluster
-
-The main Snakemake process needs the `transxpress` environment. Run it in its own job and activate the environment first. Replace the paths with yours:
-~~~
-cd /path/to/run-folder
-sbatch --time=7-00:00:00 --mem=24G --cpus-per-task=2 -o main.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate /path/to/transxpress-env && snakemake --profile /path/to/transXpress/profiles/slurm'
-~~~
-The time is the limit for the whole run, so it has to be longer than the longest job: `trinity` asks for 7 days. The main process builds the environments of the annotation rules during the run, and a build needs about 10 GB, so the job asks for 24 GB.
-
-Inside a job, the `slurm` plugin prints a warning and removes the `SLURM_` variables of the main job from its own environment, so the jobs it submits get their own settings.
-
-### Running specific steps
-
-You can run specific steps of the pipeline by specifying a rule or a resulting file:
-~~~
-# run only the rules that make the FastQC and MultiQC report of the input data, to check its quality
-snakemake --profile /path/to/transXpress/profiles/slurm results/qc/multiqc_before_trim.txt
-~~~
-~~~
-# run only the rules to produce the samples_trimmed.txt file
-snakemake --profile /path/to/transXpress/profiles/slurm results/trimmomatic/samples_trimmed.txt
-~~~
+* Trinity writes the records of `trinity.Trinity.fasta` in another order in each run. `transcriptome_copy` sorts them by name (`seqkit sort --natural-order`) into `transcriptome.fasta` and writes the gene map in the same order.
 
 ## Annotation databases
 
@@ -274,7 +391,7 @@ pfam_release: "38.2"
 rfam_release: "15.1"
 sprot_release: "2026_03"
 ~~~
-The download checks Pfam and Swiss-Prot against the md5 their servers publish. Rfam publishes no checksum. The BUSCO server keeps only the newest dataset of each lineage, so a key cannot fix the BUSCO lineage. Only a kept copy can.
+The download checks Pfam and Swiss-Prot against the md5 their servers publish. Rfam publishes no checksum. The BUSCO server keeps only the latest dataset of each lineage, so a key cannot fix the BUSCO lineage. Only a kept copy can.
 
 ### One copy in each run folder
 
@@ -300,21 +417,85 @@ This is the default, `db_dir: "resources/db"`. Each run folder downloads its own
    ~~~
    A run only reads this folder. BUSCO runs offline from `db_dir/busco_downloads`. If a database file is missing, or `lineage` is empty, Snakemake stops before any job starts and names the problem.
 
-## Running tests
+In image mode, add the shared folder to `apptainer-args` (`--bind`), so that the jobs in the image can read it.
+
+## Tests
+
+### A quick run
+
 ~~~~
 cd tests
 ./run_test.sh
 ~~~~
-`run_test.sh` runs the test data in `tests/` with `profiles/local` on 8 cores.
+`run_test.sh` runs the test data in `tests/` with `profiles/local` on 8 cores. It uses `tests/config.yaml`, which has SignalP and TargetP on, so both tools must be installed. It downloads the databases into `tests/resources/db`. When Graphviz (`dot`) is installed, it also draws the job graph of the run into `tests/dag.svg`.
+
+### The reproducibility test
+
+The reproducibility test runs the test data (T1) twice and checks that the two `results/` folders hold the same bytes. It needs a database folder filled by `download_databases` (see [One shared copy for many run folders](#one-shared-copy-for-many-run-folders)).
+
+1. `tests/make_run.sh <folder> <assembler> <db_dir>` makes a T1 run folder directly inside the repository folder: the test data, `test_samples.txt` and a `config.yaml` from `tests/config.yaml`. In this config SignalP and TargetP are off, and Trinity runs with `--inchworm_cpu 1`.
+2. Run the pipeline in each folder.
+3. `tests/compare_runs.py <folder A> <folder B>` compares the two `results/` folders file by file.
+
+~~~
+tests/make_run.sh t1-a rnaspades /path/to/databases/pfam38.2_rfam15.1_sprot2026_03/resources/db
+tests/make_run.sh t1-b rnaspades /path/to/databases/pfam38.2_rfam15.1_sprot2026_03/resources/db
+(cd t1-a && snakemake --profile ../profiles/local --cores 4)
+(cd t1-b && snakemake --profile ../profiles/local --cores 4)
+python tests/compare_runs.py t1-a t1-b
+~~~
+
+How `compare_runs.py` compares:
+* Every file must exist in both runs. Two files match when their bytes match. A gzip file matches when its decompressed bytes match.
+* Before the comparison, it replaces three kinds of paths in the content, because many tools write the folder they ran in: the run folder becomes `@RUN@`, the node-local work folder of a job becomes `@SCRATCH@`, and the folder of a conda env (on the host or in the main image) becomes `@ENV@`.
+* A file that differs passes only when a line of `tests/allowed_diffs.tsv` names it. Each line has three tab-separated fields: a path pattern, a mode and the reason. The mode `skip` lets the file differ in any way. The mode `strip:REGEX` compares the file without the lines that REGEX matches.
+* The exit code is 0 when every file matches or is allowed to differ, and 1 otherwise.
+* `--sequences results/assembly/transcriptome.fasta` compares only the sorted sequences of that file, without the headers.
+
+### The CI workflow
+
+`.github/workflows/test.yml` runs on each push to master, on each pull request and on a manual start. Its jobs:
+
+| Job | What it does |
+|---|---|
+| `databases` | fills a database folder with `download_databases` at the releases of `test.yml`, and keeps it in the GitHub Actions cache |
+| `t1` | for `rnaspades` and for `trinity`: two T1 runs in conda mode, then `compare_runs.py` |
+| `image` | calls `image.yml`: the pin files, the env paths of the `Dockerfile`, the main image on ghcr.io |
+| `t1-image` | one T1 run with `rnaspades` in conda mode and one in image mode (Apptainer 1.5.2), then `compare_runs.py` |
+
+### Differences that the test does not cover
+
+* FastQC writes the date of the run into its html report. Two runs on different days differ there. The CI runs both runs of a pair on one day.
+* TargetP output depends on the number of CPUs of its job: with more CPUs, some probabilities differ in the 6th decimal. `targetp_parallel` asks for 1 thread, and on Slurm each of its jobs gets 1 CPU. The test runs have TargetP off.
+* Trinity: `trinity.Trinity.fasta` and its gene map have their records in another order in each run, so `allowed_diffs.tsv` skips them. `transcriptome.fasta` holds the records sorted. On real data the transcripts differ too, also with `--inchworm_cpu 1` (see [Notes on results](#notes-on-results)).
+* rnaSPAdes writes the platform of the system it runs on into `results/assembly/rnaspades/params.txt`, with the glibc version. A run in the main image and a run in conda mode on a host with another glibc differ in that line.
+
+## Adding a tool
+
+A tool needs a rule, an env file and the pin file of that env. A tool with a setting also needs a config key.
+
+1. A rule in the rule file of its step, `workflow/rules/<step>.smk`. A rule file for a step of its own also needs an `include:` line in `workflow/Snakefile`. Give the rule `conda: "../envs/<tool>.yaml"`, a `log:`, `threads:` and the resources `mem_mb` and `runtime`. When the output is a final result, add it to the input of `rule all` in `workflow/Snakefile`.
+2. An env file `workflow/envs/<tool>.yaml` with the channels `conda-forge` and `bioconda`, a fixed tool version and no `name:` line. A tool from PyPI goes in a post-deploy script, as in `workflow/envs/tmhmm.post-deploy.sh`.
+3. The pin file `workflow/envs/<tool>.linux-64.pin.txt`. Push the branch: the `pins` job of `image.yml` makes the pin file, uploads it as the artifact `pins` and fails. Commit the pin file of the artifact.
+4. When the tool has a setting, a key in `config.yaml` with a comment, and the same key in `workflow/schemas/config.schema.yaml` with its type and default. The rule reads it as `config["<key>"]`.
+
+For image mode, the main image needs the env too:
+
+1. Run `snakemake --containerize` in a T1 run folder, as the `image` job of `image.yml` does.
+2. Copy the block of the env into the `Dockerfile`, and edit it as the other blocks: a `COPY` of the pin file, `conda create --file` of the pin file, and the post-deploy script when there is one.
+3. Give `MAIN_IMAGE` in `workflow/Snakefile` another tag, for example `1.1.0`.
+
+The `image` job checks the env paths of the `Dockerfile` against `snakemake --containerize`, then builds the image and pushes it to ghcr.io. A change to an env file, a pin file or a post-deploy script needs the same 3 steps.
 
 ## Align reads to the transcriptome assembly and visualize the results in IGV
-If you want to align reads to the transcriptome assembly and visualize the results in IGV, you can use the following commands:
+
+To align reads to the transcriptome assembly and visualize the results in IGV, use these commands:
 ~~~~
 snakemake --profile /path/to/transXpress/profiles/slurm align_reads
 snakemake --profile /path/to/transXpress/profiles/slurm IGV
 ~~~~
 
-Then you can load your transcriptome file to IGV: Genomes -> Load Genome from File -> select the file *results/assembly/transcriptome.fasta*
+Then load your transcriptome file to IGV: Genomes -> Load Genome from File -> select the file *results/assembly/transcriptome.fasta*
 
 Your sorted .bam files will be in the igv folder:
 ~~~~
@@ -322,10 +503,6 @@ results/expression/bowtie2_rsem/igv/{sample}.sorted.bam
 results/expression/bowtie2_rsem/igv/{sample}.sorted.bam.bai
 ~~~~
 Load them to IGV: File -> Load from File -> select the *results/expression/bowtie2_rsem/igv/{sample}.sorted.bam* files
-
-## The directed acyclic graph (DAG) of the transXpress pipeline execution
-
-![The directed acyclic execution graph](dag.svg )
 
 ## Possible problems when executing on cluster systems
 
@@ -362,7 +539,7 @@ default-resources:
 ~~~~
 A text value needs two pairs of quotes, because Snakemake reads a resource value as a Python expression. `slurm_extra` holds the flags that have no resource of their own. It cannot hold a flag that the plugin sets, such as `--constraint`, `--partition`, `--mem`, `--time` or `--cpus-per-task`.
 
-An assembly that is to be compared with another one needs the same processor on both runs, so a constraint that names the CPU generation goes in `default-resources`. Note that Slurm records no processor model, so a feature such as `gen-d` is as close as a constraint gets.
+An assembly that is to be compared with another one needs the same processor on both runs, so a constraint that names the CPU generation goes in `default-resources`. Slurm records no processor model, so a feature such as `gen-d` is as close as a constraint gets.
 
 `set-resources` applies to one rule, for example a rule that has to land on a named node:
 ~~~~
@@ -373,7 +550,7 @@ set-resources:
 ~~~~
 A rule value replaces the default value, so repeat the flags of `default-resources` that the rule still needs.
 
-A node name and a partition name usually travel together. The partition a cluster picks for the memory of a job does not have to be one that holds the node you named, and sbatch then answers `Requested node configuration is not available`.
+A node name and a partition name usually travel together. The partition a cluster picks for the memory of a job does not have to be one that holds the node you named, and sbatch then refuses the job.
 
 ### Working files on the node's local disk
 On a cluster, the run folder usually sits on network storage that all users share, and many clusters ask that work with many or large files runs on the node's own disk.
@@ -408,3 +585,5 @@ The local disk of a node is shared by the jobs on it, and a cluster may not rese
 Without the local disk, `trinity` works in `results/assembly/trinity`, and a run after a failure continues from Trinity's own checkpoints there. `--full_cleanup` deletes that folder after a successful assembly.
 
 `rnaspades` runs without `--checkpoints`. On the local disk, the folder is deleted at the end of the job, so a restart point would not survive.
+
+In image mode, the jobs in the image read the folder of the `scratch` key. Bind it with `apptainer-args` when it is outside the run folder, as `profiles/aurum` does with `/scratch`.

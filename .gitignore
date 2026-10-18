@@ -3,3 +3,8 @@ results/
 logs/
 /*/resources/
 .snakemake/
+# The job graph that tests/run_test.sh draws
+/tests/dag.svg
+# macOS folder files and Python byte code
+.DS_Store
+__pycache__/

@@ -1,0 +1,89 @@
+# SignalP 6.0 fast (signalp6 with distilled_model_signalp6.pt) in a private Apptainer image.
+# The DTU licence forbids sharing SignalP, so the image is for its licensee only.
+# Download "SignalP 6.0 fast" from DTU, unpack it, and give the path of its signalp-6-package folder:
+#
+#   apptainer build --fakeroot --build-arg SIGNALP_PACKAGE=/path/to/signalp-6-package signalp.sif containers/signalp.def
+#
+# Run: apptainer exec signalp.sif signalp6 --fastafile <in.pep> --organism eukarya --output_dir <dir> --format none --mode fast
+
+Bootstrap: docker
+From: condaforge/miniforge3:26.7.2-0
+
+%files
+    {{ SIGNALP_PACKAGE }} /opt/signalp-6-package
+
+%post
+    set -eu
+    cat > /opt/signalp.env.yml << 'EOF'
+name: signalp
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - _openmp_mutex=4.5=20_gnu
+  - biopython=1.88=py311h0d48ccd_1
+  - bzip2=1.0.8=hda65f42_10
+  - ca-certificates=2026.7.22=hbd8a1cb_0
+  - ld_impl_linux-64=2.46.1=default_hbd61a6d_102
+  - libblas=3.11.0=11_h4a7cf45_openblas
+  - libcblas=3.11.0=11_h0358290_openblas
+  - libexpat=2.8.5=hd2095e1_0
+  - libffi=3.7.0=h81df57d_1
+  - libgcc=16.2.0=ha9f2e26_7
+  - libgfortran=16.2.0=h69a702a_7
+  - libgfortran5=16.2.0=h6b99dfc_7
+  - libgomp=16.2.0=he0feb66_7
+  - liblapack=3.11.0=11_h47877c9_openblas
+  - liblzma=5.8.3=hb03c661_1
+  - libnsl=2.0.1=hb9d3cd8_1
+  - libopenblas=0.3.34=pthreads_hf13c14d_2
+  - libpython=3.11.17=h0c77377_1_cpython
+  - libsqlite=3.53.4=h0737f62_103
+  - libstdcxx=16.2.0=h934c35e_7
+  - libuuid=2.42.4=hcfc3c73_0
+  - libxcrypt=4.4.38=h280c20c_0
+  - libzlib=1.3.2=h25fd6f3_3
+  - ncurses=6.6=hdb14827_1
+  - numpy=2.4.6=py311h2e04523_0
+  - openssl=3.6.5=h781a0a9_0
+  - packaging=26.3=pyhc364b38_0
+  - pip=26.2.1=pyh8b19718_0
+  - python=3.11.17=h5f976f7_1_cpython
+  - python_abi=3.11=9_cp311
+  - readline=8.3=hd6e31c0_1
+  - setuptools=84.0.0=pyh332efcf_0
+  - tk=8.6.13=noxft_h1df4ec4_4
+  - tzdata=2026c=h151e31d_0
+  - wheel=0.48.0=pyhd8ed1ab_0
+  - zstd=1.5.7=hb78ec9c_7
+EOF
+    conda env create --prefix /opt/env --file /opt/signalp.env.yml
+    /opt/env/bin/pip install --no-cache-dir \
+        contourpy==1.3.3 cuda-bindings==13.4.3 cuda-pathfinder==1.8.3 cuda-toolkit==13.0.3.0 cycler==0.12.1 \
+        filelock==4.0.12 fonttools==4.66.1 fsspec==2026.9.0 jinja2==3.1.6 kiwisolver==1.5.1 markupsafe==3.0.4 \
+        matplotlib==3.11.2 mpmath==1.3.0 networkx==3.6.1 nvidia-cublas==13.1.1.3 nvidia-cuda-cupti==13.0.85 \
+        nvidia-cuda-nvrtc==13.0.88 nvidia-cuda-runtime==13.0.96 nvidia-cudnn-cu13==9.24.0.43 nvidia-cufft==12.0.0.61 \
+        nvidia-cufile==1.15.1.6 nvidia-curand==10.4.0.35 nvidia-cusolver==12.0.4.66 nvidia-cusparse==12.6.3.3 \
+        nvidia-cusparselt-cu13==0.8.1 nvidia-nccl-cu13==2.30.7 nvidia-nvjitlink==13.4.92 nvidia-nvshmem-cu13==3.4.5 \
+        nvidia-nvtx==13.0.85 pillow==12.3.0 pyparsing==3.3.3 python-dateutil==2.9.0.post0 six==1.17.0 \
+        sympy==1.14.0 torch==2.14.1 tqdm==4.70.1 triton==3.8.0 typing-extensions==4.16.0
+    # signalp6 loads its model from signalp/model_weights in the installed package
+    cd /opt/signalp-6-package
+    rm -rf build signalp6.egg-info
+    cp models/distilled_model_signalp6.pt signalp/model_weights/
+    /opt/env/bin/pip install --no-cache-dir --no-deps .
+    cd /
+    rm -rf /opt/signalp-6-package /opt/signalp.env.yml
+    conda clean --all --yes
+
+%environment
+    export PATH=/opt/env/bin:$PATH
+    export PYTHONNOUSERSITE=1
+
+%test
+    signalp6 --help > /dev/null
+    test -f /opt/env/lib/python3.11/site-packages/signalp/model_weights/distilled_model_signalp6.pt
+
+%labels
+    Description SignalP 6.0 fast, private image under the DTU licence

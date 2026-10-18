@@ -44,6 +44,14 @@ properties:
     enum: [eukarya, other, "", null]
     default: eukarya
     description: The organism group for SignalP. "" turns SignalP off.
+  signalp_container:
+    type: [string, "null"]
+    default: ""
+    description: The path of an Apptainer image (.sif) that holds signalp6. "" runs SignalP in the conda env "signalp".
+  targetp_container:
+    type: [string, "null"]
+    default: ""
+    description: The path of an Apptainer image (.sif) that holds targetp. "" runs TargetP in the conda env "targetp".
   lineage:
     type: [string, "null"]
     default: ""

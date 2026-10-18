@@ -4,7 +4,13 @@
 # aurum.md in the project folder describes the env and the launcher.
 
 executor: slurm
-software-deployment-method: conda
+# apptainer runs SignalP and TargetP from their images when signalp_container or targetp_container is set
+software-deployment-method:
+  - conda
+  - apptainer
+# Apptainer here binds only $HOME, /tmp and the run folder. Each job keeps its temporary files in
+# $SCRATCH, which is under /scratch.
+apptainer-args: "--bind /scratch"
 snakefile: ../../workflow/Snakefile
 # the rule envs, shared by all runs
 conda-prefix: /uochb/soft/users/titodamiani/conda-envs/snakemake/transxpress

@@ -32,6 +32,13 @@ targetp: "non-pl"
 # set the organism group for SignalP: "eukarya" for eukaryotes, "other" for bacteria and archaea
 signalp: "eukarya"
 
+# SignalP 6 and TargetP 2 have a DTU licence, so each licensee installs them. Each tool runs either in a
+# conda env with that name ("signalp", "targetp") or in an Apptainer image built from containers/*.def.
+# A path to a .sif runs the tool in that image, and needs apptainer in the software-deployment-method of
+# the profile. "" uses the conda env.
+signalp_container: ""
+targetp_container: ""
+
 # Strand-specific RNA-Seq read orientation.
 #
 # For Trinity assembler use

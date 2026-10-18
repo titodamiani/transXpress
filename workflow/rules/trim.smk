@@ -42,7 +42,7 @@ rule trimmomatic_parallel:
     runtime="4h"
   shell:
     """
-    # record the computer this ran on, because the assembly depends on it
+    # record the computer this ran on
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
     read SAMPLE REPLICATE F_READS R_READS < {input}
     # an empty line of the samples file gives an empty marker

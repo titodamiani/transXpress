@@ -102,7 +102,6 @@ rule rnaspades:
     }}
     scratch_start "{params.scratch_var}" {log} stop on_failure
     if [ -n "$LOCAL_ROOT" ]; then
-      RUN=$(pwd)
       SPADES_OUT=$WORK/rnaspades
     fi
 

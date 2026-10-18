@@ -19,10 +19,9 @@ rule fastqc:
     runtime="4h"
   shell:
     """
-    # run fastqc on input files
-    # making directory for the fastqc summary files
     mkdir {output} &> {log}
-    FILES=$(awk '{{ printf "%s\\n%s\\n", $3,$4}}' {input}) &>> {log}
+    # the reads files, columns 3 and 4 of the samples file
+    FILES=$(awk '{{ printf "%s\\n%s\\n", $3,$4}}' {input})
     # FastQC draws the text of its graphs with the fonts that fontconfig finds. A fonts.conf with only the
     # fonts of the env makes the graphs the same on every host and in the main image, which has no system
     # fonts. Java keeps the fonts it got in <user.home>/.java/fonts, so user.home is the job's folder.
@@ -32,7 +31,7 @@ rule fastqc:
     printf '<?xml version="1.0"?>\\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\\n<fontconfig>\\n<dir>%s/fonts</dir>\\n<dir>%s/share/fonts</dir>\\n<include ignore_missing="yes">%s/etc/fonts/conf.d</include>\\n<cachedir>%s/cache</cachedir>\\n</fontconfig>\\n' \
       "$ENV" "$ENV" "$ENV" "$TMP" > "$TMP/fonts.conf"
     export FONTCONFIG_FILE="$TMP/fonts.conf" JAVA_TOOL_OPTIONS="-Duser.home=$TMP"
-    # running fastqc on the files, {threads} of them at a time
+    # {threads} files at a time
     fastqc -f fastq -t {threads} -o {output} $FILES &>> {log}
     rm -rf "$TMP"
     """
@@ -60,7 +59,7 @@ rule multiqc:
     runtime="4h"
   shell:
     """
-    # common error resolved by those two export commands
+    # MultiQC stops when the locale is not UTF-8
     export LC_ALL=C.UTF-8
     export LANG=C.UTF-8
     mkdir {output.out_dir} &> {log}
@@ -140,11 +139,8 @@ rule trinity_stats:
     # genes tied on expression keep that order. A fixed Perl hash seed gives the same order in each run.
     export PERL_HASH_SEED=0
 
-    if [ "{params.assembler}" = trinity ]; then
-      $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} > {output.stats} 2> {log}
-    else
-      $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} | sed -e 's/trinity/rnaspades/g' > {output.stats} 2> {log}
-    fi
+    # TrinityStats.pl names the assembler "trinity" in its output
+    $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} 2> {log} | sed -e 's/trinity/{params.assembler}/g' > {output.stats}
     # contig_ExN50_statistic.pl writes its .E-inputs table and the R script writes ExN50_plot.pdf into the
     # folder they run in, so both run in the folder of the outputs
     RUN=$(pwd)

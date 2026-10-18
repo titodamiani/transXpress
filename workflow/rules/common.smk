@@ -78,7 +78,7 @@ def job_tmpdir(wildcards):
   The temporary folder of a job: the folder in the variable that the scratch key names, or the
   system default when the key is "" or the variable is not set. Snakemake calls this inside the job.
   """
-  return (os.environ.get(SCRATCH_VAR, "") if SCRATCH_VAR else "") or tempfile.gettempdir()
+  return os.environ.get(SCRATCH_VAR) or tempfile.gettempdir()
 
 # The folder of the annotation databases. "resources/db" keeps one copy in each run folder, which the
 # pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
@@ -178,7 +178,7 @@ def parallel_annotation_tasks(wildcards):
   parallel_dir = checkpoints.fasta_split.get(split=wildcards["split"]).output[0]
   # sorted by number, so the merged file follows the order of the sequences at any chunk size.
   # glob_wildcards returns the folder order, which differs between runs
-  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}." + wildcards["split"])).index, key=int)
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.%s" % wildcards["split"])).index, key=int)
   return expand("results/annotation/chunks/{task}/{index}.out", index=job_ids, task=wildcards["task"])
 
 # These rules run in the main job, not as cluster jobs

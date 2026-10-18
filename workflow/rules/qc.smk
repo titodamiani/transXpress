@@ -23,8 +23,18 @@ rule fastqc:
     # making directory for the fastqc summary files
     mkdir {output} &> {log}
     FILES=$(awk '{{ printf "%s\\n%s\\n", $3,$4}}' {input}) &>> {log}
+    # FastQC draws the text of its graphs with the fonts that fontconfig finds. A fonts.conf with only the
+    # fonts of the env makes the graphs the same on every host and in the main image, which has no system
+    # fonts. Java keeps the fonts it got in <user.home>/.java/fonts, so user.home is the job's folder.
+    # (Snakemake sets TMPDIR, see job_tmpdir)
+    TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/fastqc.XXXXXX")
+    ENV=$(dirname $(dirname $(command -v fastqc)))
+    printf '<?xml version="1.0"?>\\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\\n<fontconfig>\\n<dir>%s/fonts</dir>\\n<dir>%s/share/fonts</dir>\\n<include ignore_missing="yes">%s/etc/fonts/conf.d</include>\\n<cachedir>%s/cache</cachedir>\\n</fontconfig>\\n' \
+      "$ENV" "$ENV" "$ENV" "$TMP" > "$TMP/fonts.conf"
+    export FONTCONFIG_FILE="$TMP/fonts.conf" JAVA_TOOL_OPTIONS="-Duser.home=$TMP"
     # running fastqc on the files, {threads} of them at a time
     fastqc -f fastq -t {threads} -o {output} $FILES &>> {log}
+    rm -rf "$TMP"
     """
 
 

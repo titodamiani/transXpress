@@ -36,8 +36,9 @@ from pathlib import Path
 
 
 SCRATCH_FOLDER = re.compile(rb"/scratch/slurm_jobs/[^/\s]+/\d+/transxpress\.\w+")
-# a path that ends in the folder of a Snakemake conda env: 32 hex digits, and "_" in some Snakemake versions
-ENV_FOLDER = re.compile(rb"[^\s\"'()]*/[0-9a-f]{32}_?(?=/)")
+# a path that ends in the folder of a Snakemake conda env: 32 hex digits, and "_" in some Snakemake versions.
+# A match starts only at the start of a word, so a long line (a sequence) takes linear time.
+ENV_FOLDER = re.compile(rb"(?<![^\s\"'()])[^\s\"'()]*/[0-9a-f]{32}_?(?=/)")
 
 
 def read_allowed(path):

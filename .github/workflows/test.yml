@@ -1,7 +1,7 @@
 name: test
 
 # T1 (the small test data in tests/) through the whole pipeline, twice for each assembler, then a
-# comparison of the two runs: tests/compare_runs.py for rnaSPAdes, the sorted sequences for Trinity.
+# comparison of the two runs with tests/compare_runs.py and tests/allowed_diffs.tsv.
 # The annotation databases come from the download_databases target at the pinned releases and stay
 # in the Actions cache, keyed by the release numbers.
 
@@ -95,11 +95,7 @@ jobs:
         run: |
           a="t1-${{ matrix.assembler }}-a"
           b="t1-${{ matrix.assembler }}-b"
-          if [ "${{ matrix.assembler }}" = "rnaspades" ]; then
-            python tests/compare_runs.py "$a" "$b"
-          else
-            python tests/compare_runs.py "$a" "$b" --sequences results/assembly/transcriptome.fasta
-          fi
+          python tests/compare_runs.py "$a" "$b"
       - name: Upload the logs
         if: failure()
         uses: actions/upload-artifact@v4

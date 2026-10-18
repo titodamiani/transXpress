@@ -7,8 +7,11 @@ Usage: compare_runs.py RUN_A RUN_B [--allowed tests/allowed_diffs.tsv] [--quiet]
 Every file under RUN_A/results must exist in RUN_B/results, and the other way round.
 Two files match when their bytes match. A gzip file matches when its decompressed bytes match.
 Before the comparison, two paths are replaced in the content, because many tools write the folder
-they ran in: the absolute path of each run folder becomes "@RUN@", and the node-local work folder of
-a job (/scratch/slurm_jobs/<user>/<job id>/transxpress.<random>) becomes "@SCRATCH@".
+they ran in: the absolute path of each run folder becomes "@RUN@", the node-local work folder of
+a job (/scratch/slurm_jobs/<user>/<job id>/transxpress.<random>) becomes "@SCRATCH@", and the folder of
+a Snakemake conda env (<conda prefix>/<hash> on the host, /conda-envs/<hash> in the main image)
+becomes "@ENV@". The hash of an env folder on the host covers the path of the conda prefix, so it
+differs from the hash in the image for the same env.
 
 A file that differs passes only when a line of the allowed-diffs file names it. Each line has
 three tab-separated fields: a path pattern (fnmatch, relative to the run folder, "*" also
@@ -33,6 +36,8 @@ from pathlib import Path
 
 
 SCRATCH_FOLDER = re.compile(rb"/scratch/slurm_jobs/[^/\s]+/\d+/transxpress\.\w+")
+# a path that ends in the folder of a Snakemake conda env: 32 hex digits, and "_" in some Snakemake versions
+ENV_FOLDER = re.compile(rb"[^\s\"'()]*/[0-9a-f]{32}_?(?=/)")
 
 
 def read_allowed(path):
@@ -48,7 +53,8 @@ def read_allowed(path):
 
 
 def content(path, run):
-    """The bytes of a file. A gzip file gives its decompressed bytes. The run folder path becomes @RUN@."""
+    """The bytes of a file. A gzip file gives its decompressed bytes. The run folder path becomes @RUN@,
+    a scratch folder @SCRATCH@ and an env folder @ENV@."""
     data = path.read_bytes()
     if data[:2] == b"\x1f\x8b":
         try:
@@ -56,7 +62,8 @@ def content(path, run):
         except (OSError, EOFError):
             pass
     data = data.replace(str(Path(run).resolve()).encode(), b"@RUN@")
-    return SCRATCH_FOLDER.sub(b"@SCRATCH@", data)
+    data = SCRATCH_FOLDER.sub(b"@SCRATCH@", data)
+    return ENV_FOLDER.sub(b"@ENV@", data)
 
 
 def md5(data):
@@ -73,7 +80,9 @@ def first_difference(a, b):
     b_lines = b.split(b"\n")
     for number, (x, y) in enumerate(zip(a_lines, b_lines), 1):
         if x != y:
-            return "line %d: %r != %r" % (number, x[:80], y[:80])
+            # from 20 bytes before the first byte that differs
+            start = max(0, next(i for i in range(len(x) + 1) if x[i:i + 1] != y[i:i + 1]) - 20)
+            return "line %d, byte %d: %r != %r" % (number, start + 1, x[start:start + 80], y[start:start + 80])
     return "line counts %d and %d" % (len(a_lines), len(b_lines))
 
 

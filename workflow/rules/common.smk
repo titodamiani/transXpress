@@ -1,4 +1,5 @@
 import functools
+import hashlib
 import os
 import sys
 import shutil
@@ -167,16 +168,34 @@ rule delete_intermediates:
     """
 
 
+# The software deployment methods of the run, for example "apptainer conda"
+DEPLOYMENT = " ".join(sorted(method.name.lower().replace("_", "-")
+  for method in workflow.deployment_settings.deployment_method))
+
+def main_image_file():
+  """
+  The image file of MAIN_IMAGE that apptainer runs: Snakemake keeps it as <md5 of the URL>.simg in the
+  apptainer prefix, .snakemake/singularity by default.
+  """
+  prefix = workflow.deployment_settings.apptainer_prefix or os.path.join(".snakemake", "singularity")
+  return os.path.join(str(prefix), hashlib.md5(MAIN_IMAGE.encode()).hexdigest() + ".simg")
+
 rule run_info:
   """
-  Records the computer the pipeline ran on and the transXpress commit.
-  The assembly depends on the hardware, the assembler version and the thread
-  count, so a later run can be compared against this one.
+  Records the computer the pipeline ran on, the transXpress commit, the images and the version of each
+  tool. The assembly depends on the hardware, the assembler version and the thread count, so a later run
+  can be compared against this one.
   """
   output:
     "results/run_info.txt"
   params:
-    basedir=workflow.basedir
+    basedir=workflow.basedir,
+    deployment=DEPLOYMENT,
+    # the rule envs come from the main image only when apptainer is a deployment method
+    image=MAIN_IMAGE if DeploymentMethod.APPTAINER in workflow.deployment_settings.deployment_method else "",
+    image_file=main_image_file(),
+    signalp_container=SIGNALP_CONTAINER,
+    targetp_container=TARGETP_CONTAINER
   threads:
     1
   resources:

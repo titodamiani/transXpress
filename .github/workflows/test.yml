@@ -75,7 +75,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: conda-envs
-          key: conda-envs-${{ hashFiles('workflow/envs/*.yaml') }}
+          key: conda-envs-${{ hashFiles('workflow/envs/*') }}
       - uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-version: latest
@@ -104,3 +104,88 @@ jobs:
           path: |
             t1-${{ matrix.assembler }}-*/logs
             t1-${{ matrix.assembler }}-*/.snakemake/log
+
+  # T1 with rnaSPAdes once with the rule envs from conda and once with the rule envs from the main image
+  # (MAIN_IMAGE in workflow/Snakefile, built and pushed by image.yml), then tests/compare_runs.py.
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+
+  t1-image:
+    needs: [databases, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/cache/restore@v4
+        with:
+          path: db-fill/resources/db
+          key: db-pfam${{ env.PFAM_RELEASE }}-rfam${{ env.RFAM_RELEASE }}-sprot${{ env.SPROT_RELEASE }}-${{ env.LINEAGE }}
+          fail-on-cache-miss: true
+      - uses: actions/cache@v4
+        with:
+          path: conda-envs
+          key: conda-envs-${{ hashFiles('workflow/envs/*') }}
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: workflow/envs/default.yaml
+          activate-environment: transxpress
+          conda-remove-defaults: true
+      - name: Install Apptainer
+        run: |
+          # the release package of Apptainer, the version on Aurum
+          wget -q https://github.com/apptainer/apptainer/releases/download/v1.5.2/apptainer_1.5.2_amd64.deb
+          echo "b5ea4ddbb7db2bfd396b4e64adaedb75d990fc7efd851189472899a1bd521d89  apptainer_1.5.2_amd64.deb" | sha256sum -c
+          sudo apt-get update -q
+          sudo apt-get install -y -q ./apptainer_1.5.2_amd64.deb
+          rm apptainer_1.5.2_amd64.deb
+          # Ubuntu 24.04 lets only programs with an AppArmor profile make a user namespace
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          apptainer --version
+      - name: Run T1 with conda
+        shell: bash -el {0}
+        run: |
+          tests/make_run.sh t1-conda rnaspades "$GITHUB_WORKSPACE/db-fill/resources/db"
+          cd t1-conda
+          snakemake --profile ../profiles/local --conda-prefix "$GITHUB_WORKSPACE/conda-envs" --cores 4
+      - name: Run T1 with the main image
+        shell: bash -el {0}
+        env:
+          APPTAINER_DOCKER_USERNAME: ${{ github.actor }}
+          APPTAINER_DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer-cache
+          APPTAINER_TMPDIR: ${{ runner.temp }}
+        run: |
+          echo "image: ${{ needs.image.outputs.image }}"
+          tests/make_run.sh t1-image rnaspades "$GITHUB_WORKSPACE/db-fill/resources/db"
+          cd t1-image
+          # the jobs in the image read the workflow scripts, the adapters and the databases, which are
+          # outside the run folder
+          snakemake --profile ../profiles/local --software-deployment-method conda apptainer \
+            --apptainer-prefix "$GITHUB_WORKSPACE/images" --apptainer-args "--bind $GITHUB_WORKSPACE" --cores 4
+          grep -E '^(deployment|image|image_file)\b' results/run_info.txt
+      - name: Compare the two runs
+        shell: bash -el {0}
+        run: python tests/compare_runs.py t1-conda t1-image
+      - name: Upload the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t1-image-logs
+          path: |
+            t1-conda/logs
+            t1-conda/.snakemake/log
+            t1-conda/results/qc/fastqc_*_trim/*.html
+            t1-image/logs
+            t1-image/.snakemake/log
+            t1-image/results/qc/fastqc_*_trim/*.html

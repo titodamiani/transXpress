@@ -1,5 +1,13 @@
 # transXpress: RNA-Seq de novo assembly and annotation. Run it in a run folder that holds config.yaml and a
 # samples file: snakemake --snakefile ../workflow/Snakefile
+
+# The image that holds the conda env of every rule, built from the Dockerfile at the top of the repository by
+# .github/workflows/image.yml. A run with --software-deployment-method conda apptainer takes the rule envs from
+# it, and a run with conda alone builds them from the pin files in envs/. A change to an env file needs a new
+# Dockerfile and a new tag here.
+MAIN_IMAGE = "docker://ghcr.io/titodamiani/transxpress:1.0.0"
+containerized: MAIN_IMAGE
+
 include: "rules/common.smk"
 include: "rules/databases.smk"
 include: "rules/trim.smk"
@@ -43,3 +51,8 @@ rule all:
 # resource inside the job, where the variable is set.
 for workflow_rule in workflow.rules:
   workflow_rule.resources["tmpdir"] = job_tmpdir
+  # A rule without a conda env runs in the main env, outside the image. Its tools and Python packages come
+  # from that env, and a script: rule loads the snakemake package of that env, which needs its Python.
+  if workflow_rule.is_containerized and not workflow_rule.conda_env:
+    workflow_rule.container_img = None
+    workflow_rule.is_containerized = False

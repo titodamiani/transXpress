@@ -197,9 +197,10 @@ rule signalp_parallel:
     "results/annotation/chunks/signalp/{index}.out"
   log:
     "logs/signalp_parallel/{index}.log"
-  # the image of the signalp_container key, or the conda env "signalp" when the key is ""
+  # the image of the signalp_container key, or the conda env "signalp" when the key is "". No env when the tool
+  # is off, so snakemake --containerize, which cannot put a named env in an image, takes the rule.
   conda:
-    None if SIGNALP_CONTAINER else "signalp"
+    None if SIGNALP_CONTAINER or not SIGNALP_ORGANISM else "signalp"
   container:
     SIGNALP_CONTAINER or None
   params:
@@ -231,9 +232,10 @@ rule targetp_parallel:
     "results/annotation/chunks/targetp/{index}.out"
   log:
     "logs/targetp_parallel/{index}.log"
-  # the image of the targetp_container key, or the conda env "targetp" when the key is ""
+  # the image of the targetp_container key, or the conda env "targetp" when the key is "". No env when the tool
+  # is off, so snakemake --containerize, which cannot put a named env in an image, takes the rule.
   conda:
-    None if TARGETP_CONTAINER else "targetp"
+    None if TARGETP_CONTAINER or not TARGETP_ORGANISM else "targetp"
   container:
     TARGETP_CONTAINER or None
   threads:

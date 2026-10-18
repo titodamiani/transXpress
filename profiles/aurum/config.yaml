@@ -4,15 +4,20 @@
 # aurum.md in the project folder describes the env and the launcher.
 
 executor: slurm
-# apptainer runs SignalP and TargetP from their images when signalp_container or targetp_container is set
+# The rule envs come from the main image (MAIN_IMAGE in workflow/Snakefile). apptainer also runs SignalP
+# and TargetP from their images when signalp_container or targetp_container is set.
 software-deployment-method:
   - conda
   - apptainer
-# Apptainer here binds only $HOME, /tmp and the run folder. Each job keeps its temporary files in
-# $SCRATCH, which is under /scratch.
-apptainer-args: "--bind /scratch"
+# The main image: Snakemake keeps it in this folder as <md5 of the MAIN_IMAGE URL>.simg. When the file is
+# missing, the main job pulls it from ghcr.io, so pull it first in a Slurm job (aurum.md).
+apptainer-prefix: /uochb/soft/users/titodamiani/images/transxpress
+# Apptainer here binds only $HOME, /tmp and the run folder. A job in an image also reads the workflow
+# scripts and the adapters of the clone, the shared databases (all under /uochb/people/titodamiani), the
+# reads (under /uochb/project/pluskal_group) and its temporary files in $SCRATCH (under /scratch).
+apptainer-args: "--bind /scratch,/uochb/people/titodamiani,/uochb/project/pluskal_group"
 snakefile: ../../workflow/Snakefile
-# the rule envs, shared by all runs
+# the rule envs of a run with conda alone (--software-deployment-method conda), shared by all runs
 conda-prefix: /uochb/soft/users/titodamiani/conda-envs/snakemake/transxpress
 jobs: 50
 max-jobs-per-timespan: "1/1s"

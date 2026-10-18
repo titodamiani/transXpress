@@ -1,0 +1,147 @@
+name: image
+
+# The main image: the conda env of every rule, each one built from its pin file, in one Docker image on
+# ghcr.io. workflow/Snakefile names it in MAIN_IMAGE. test.yml calls this workflow before its image run.
+#
+# pins: makes the pin file <env>.linux-64.pin.txt of each env file in a clean linux-64 conda, with
+#   conda list --explicit --md5, and uploads the pin files as the artifact "pins". A pull request
+#   with an env file and no pin file fails here; commit the pin files of the artifact. A manual run
+#   (workflow_dispatch) makes the pin files of all env files again. An env file with a name: is a
+#   named env, which Snakemake does not build, so it gets no pin file.
+# image: checks the env paths in Dockerfile against snakemake --containerize, then builds the image
+#   and pushes it under the tag of MAIN_IMAGE, unless ghcr.io holds it. A tag on ghcr.io that holds an
+#   image of another Dockerfile stops the job: a new Dockerfile needs a new tag.
+
+on:
+  workflow_call:
+    outputs:
+      image:
+        description: the image of MAIN_IMAGE in workflow/Snakefile, without docker://
+        value: ${{ jobs.image.outputs.image }}
+  workflow_dispatch:
+
+jobs:
+  pins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the env files that need a pin file
+        id: find
+        run: |
+          envs=""
+          for env in workflow/envs/*.yaml; do
+            grep -q '^name:' "$env" && continue
+            if [ "${{ github.event_name }}" = workflow_dispatch ] || [ ! -f "${env%.yaml}.linux-64.pin.txt" ]; then
+              envs="$envs $env"
+            fi
+          done
+          echo "envs=$envs" >> "$GITHUB_OUTPUT"
+          echo "env files without a pin file:${envs:- none}"
+      - if: steps.find.outputs.envs != ''
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          conda-remove-defaults: true
+      - name: Make the pin files
+        if: steps.find.outputs.envs != ''
+        shell: bash -el {0}
+        env:
+          # tmhmm.py imports numpy in its setup.py, so pip builds it against the numpy of its env
+          PIP_NO_BUILD_ISOLATION: "0"
+        run: |
+          conda config --set channel_priority strict
+          for env in ${{ steps.find.outputs.envs }}; do
+            prefix="$RUNNER_TEMP/envs/$(basename "$env" .yaml)"
+            conda env create --quiet --prefix "$prefix" --file "$env"
+            conda list --explicit --md5 --prefix "$prefix" > "${env%.yaml}.linux-64.pin.txt"
+            rm -rf "$prefix"
+          done
+          git status --short workflow/envs
+      - if: steps.find.outputs.envs != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pins
+          path: workflow/envs/*.linux-64.pin.txt
+      - name: Stop when an env file has no pin file
+        if: steps.find.outputs.envs != '' && github.event_name != 'workflow_dispatch'
+        run: |
+          echo "::error::Commit the pin files of the artifact \"pins\" for:${{ steps.find.outputs.envs }}"
+          exit 1
+
+  image:
+    needs: pins
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the image tag
+        id: tag
+        run: |
+          image=$(sed -n 's|^MAIN_IMAGE = "docker://\(.*\)"$|\1|p' workflow/Snakefile)
+          test -n "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "dockerfile=$(sha256sum Dockerfile | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "$image, Dockerfile sha256 $(sha256sum Dockerfile | cut -d ' ' -f 1)"
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: workflow/envs/default.yaml
+          activate-environment: transxpress
+          conda-remove-defaults: true
+      - name: Check the env paths of the Dockerfile
+        shell: bash -el {0}
+        run: |
+          # Snakemake finds an env in the image at /conda-envs/<hash>. The hash covers the env file, its
+          # pin file for the platform and its post-deploy script, so it has to come from linux-64.
+          # SignalP and TargetP are off in a T1 folder, so their rules take no named conda env, which
+          # snakemake --containerize cannot put in an image
+          tests/make_run.sh containerize-check rnaspades resources/db
+          (cd containerize-check && snakemake --profile ../profiles/local --containerize) > containerize.out
+          cat containerize.out
+          envs() { grep -E '^#   (source|prefix): ' "$1" | sed 's|source: \.\./|source: |'; }
+          if ! diff <(envs containerize.out) <(envs Dockerfile); then
+            echo "::error::The env paths of Dockerfile differ from snakemake --containerize (left). Make the Dockerfile again."
+            exit 1
+          fi
+      - name: Look for the tag on ghcr.io
+        id: remote
+        env:
+          IMAGE: ${{ steps.tag.outputs.image }}
+          DOCKERFILE: ${{ steps.tag.outputs.dockerfile }}
+        run: |
+          if inspect=$(skopeo inspect --creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" "docker://$IMAGE" 2>&1); then
+            remote=$(echo "$inspect" | jq -r '.Labels["io.github.titodamiani.transxpress.dockerfile_sha256"] // ""')
+            if [ "$remote" != "$DOCKERFILE" ]; then
+              echo "::error::ghcr.io holds $IMAGE from another Dockerfile (sha256 $remote). Give the image a new tag in MAIN_IMAGE of workflow/Snakefile."
+              exit 1
+            fi
+            echo "ghcr.io holds $IMAGE from this Dockerfile"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          elif echo "$inspect" | grep -q 'manifest unknown'; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$inspect"
+            exit 1
+          fi
+      - name: Free disk space
+        if: steps.remote.outputs.build == 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Build and push the image
+        if: steps.remote.outputs.build == 'true'
+        env:
+          IMAGE: ${{ steps.tag.outputs.image }}
+        run: |
+          docker build --label "io.github.titodamiani.transxpress.dockerfile_sha256=${{ steps.tag.outputs.dockerfile }}" \
+            --tag "$IMAGE" .
+          docker images "$IMAGE"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE"

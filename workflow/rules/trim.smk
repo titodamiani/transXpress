@@ -34,7 +34,8 @@ rule trimmomatic_parallel:
   conda:
     "../envs/trimmomatic.yaml"
   params:
-    trimmomatic=config["trimmomatic_parameters"]
+    # a function, because Snakemake takes {adapters} in a plain string for a wildcard
+    trimmomatic=lambda wildcards: str(config["trimmomatic_parameters"])
   threads:
     8
   resources:

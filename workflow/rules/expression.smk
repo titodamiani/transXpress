@@ -16,7 +16,6 @@ rule align_reads:
     "../envs/trinity_utils.yaml"
   params:
     scratch_var=SCRATCH_VAR,
-    scratch_sh=SCRATCH_SH,
     out_dir=lambda wildcards, output: os.path.dirname(output[0]),
     strand=abundance_strand_option()
   threads:
@@ -29,32 +28,10 @@ rule align_reads:
   retries: 0
   shell:
     """
-    # align_and_estimate_abundance.pl writes the indexes beside the transcriptome and one folder per
-    # replicate into the folder it runs in, so it runs in a folder that holds links to the transcriptome
-    # and the gene map, and a samples file with the full read paths. That folder is the tool folder
-    # {params.out_dir}, or a folder on the node's local disk when the scratch key names a variable that is
-    # set in this job. At the end, everything but the links and the samples file is copied to the tool folder.
-    RUN=$(pwd)
-    LOG="$RUN/{log}"
-    : > "$LOG"
-    OUT="$RUN/{params.out_dir}"
-    mkdir -p "$OUT"
-    source {params.scratch_sh}
-    copy_back() {{
-      ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l ! -name samples_trimmed.txt -exec cp -rp -t "$OUT" {{}} + )
-    }}
-    # On a failure, the files go to the tool folder, where they would stand without the local disk.
-    on_failure() {{
-      cd "$RUN"
-      echo "align_reads stopped with code $rc, so the files in $WORK go to {params.out_dir}" &>> "$LOG"
-      copy_back &>> "$LOG"
-    }}
-    scratch_start "{params.scratch_var}" "$LOG" stop on_failure
-    if [ -z "$LOCAL_ROOT" ]; then WORK="$OUT"; fi
-    cd "$WORK"
-    ln -sfn "$RUN/{input.transcriptome}" transcriptome.fasta
-    ln -sfn "$RUN/{input.gene_trans_map}" transcriptome.gene_trans_map
-    awk -v run="$RUN" 'BEGIN {{ OFS = "\t" }} {{ for (i = 3; i <= NF; i++) $i = run "/" $i; print }}' "$RUN/{input.samples}" > samples_trimmed.txt
+    # abundance_start (scripts/scratch.sh) works in the tool folder {params.out_dir}, or on the node's
+    # local disk when the scratch key names a variable that is set in this job
+    source {workflow.basedir}/scripts/scratch.sh
+    abundance_start align_reads "{params.scratch_var}" {log} {params.out_dir} {input.transcriptome} {input.gene_trans_map} {input.samples}
 
     # Remove old markers so the aligner runs again on the trimmed reads.
     for rep in $(awk '{{print $2}}' samples_trimmed.txt); do rm -f "$rep/bowtie2.bam.ok"; done
@@ -65,14 +42,7 @@ rule align_reads:
     # for_rsem.bam is a large temporary copy of the alignment. Nothing reads it later.
     for rep in $(awk '{{print $2}}' samples_trimmed.txt); do rm -f "$rep/bowtie2.bam.for_rsem.bam"; done
 
-    # the links and the samples file serve only this rule
-    rm -f transcriptome.fasta transcriptome.gene_trans_map samples_trimmed.txt
-    if [ -n "$LOCAL_ROOT" ]; then
-      SIZE=$(du -sh "$WORK" | cut -f1)
-      START=$(date +%s)
-      copy_back &>> "$LOG"
-      echo "copied $SIZE from $WORK to {params.out_dir} in $(( $(date +%s) - START )) s" &>> "$LOG"
-    fi
+    abundance_finish
     """
 
 
@@ -178,7 +148,6 @@ rule kallisto:
     "../envs/trinity_utils.yaml"
   params:
     scratch_var=SCRATCH_VAR,
-    scratch_sh=SCRATCH_SH,
     out_dir=lambda wildcards, output: os.path.dirname(output.counts),
     strand=abundance_strand_option()
   threads:
@@ -196,32 +165,10 @@ rule kallisto:
     # in each run. A fixed Perl hash seed gives the same row order in each run.
     export PERL_HASH_SEED=0
 
-    # align_and_estimate_abundance.pl writes the indexes beside the transcriptome and one folder per
-    # replicate into the folder it runs in, so it runs in a folder that holds links to the transcriptome
-    # and the gene map, and a samples file with the full read paths. That folder is the tool folder
-    # {params.out_dir}, or a folder on the node's local disk when the scratch key names a variable that is
-    # set in this job. At the end, everything but the links and the samples file is copied to the tool folder.
-    RUN=$(pwd)
-    LOG="$RUN/{log}"
-    : > "$LOG"
-    OUT="$RUN/{params.out_dir}"
-    mkdir -p "$OUT"
-    source {params.scratch_sh}
-    copy_back() {{
-      ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l ! -name samples_trimmed.txt -exec cp -rp -t "$OUT" {{}} + )
-    }}
-    # On a failure, the files go to the tool folder, where they would stand without the local disk.
-    on_failure() {{
-      cd "$RUN"
-      echo "kallisto stopped with code $rc, so the files in $WORK go to {params.out_dir}" &>> "$LOG"
-      copy_back &>> "$LOG"
-    }}
-    scratch_start "{params.scratch_var}" "$LOG" stop on_failure
-    if [ -z "$LOCAL_ROOT" ]; then WORK="$OUT"; fi
-    cd "$WORK"
-    ln -sfn "$RUN/{input.transcriptome}" transcriptome.fasta
-    ln -sfn "$RUN/{input.gene_trans_map}" transcriptome.gene_trans_map
-    awk -v run="$RUN" 'BEGIN {{ OFS = "\t" }} {{ for (i = 3; i <= NF; i++) $i = run "/" $i; print }}' "$RUN/{input.samples}" > samples_trimmed.txt
+    # abundance_start (scripts/scratch.sh) works in the tool folder {params.out_dir}, or on the node's
+    # local disk when the scratch key names a variable that is set in this job
+    source {workflow.basedir}/scripts/scratch.sh
+    abundance_start kallisto "{params.scratch_var}" {log} {params.out_dir} {input.transcriptome} {input.gene_trans_map} {input.samples}
 
     $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {params.strand} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
 
@@ -244,12 +191,5 @@ rule kallisto:
       exit 1
     fi
 
-    # the links and the samples file serve only this rule
-    rm -f transcriptome.fasta transcriptome.gene_trans_map samples_trimmed.txt
-    if [ -n "$LOCAL_ROOT" ]; then
-      SIZE=$(du -sh "$WORK" | cut -f1)
-      START=$(date +%s)
-      copy_back &>> "$LOG"
-      echo "copied $SIZE from $WORK to {params.out_dir} in $(( $(date +%s) - START )) s" &>> "$LOG"
-    fi
+    abundance_finish
     """

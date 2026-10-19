@@ -16,7 +16,6 @@ rule trinity:
     "../envs/trinity_utils.yaml"
   params:
     scratch_var=SCRATCH_VAR,
-    scratch_sh=SCRATCH_SH,
     trinity_parameters=config["trinity_parameters"],
     strand_specific=config["strand_specific"]
   threads:
@@ -38,7 +37,7 @@ rule trinity:
     # Trinity works in results/assembly/trinity, and a rerun after a failure continues from Trinity's own
     # checkpoints there. --full_cleanup deletes the work folder after a successful assembly.
     TRINITY_OUT=results/assembly/trinity
-    source {params.scratch_sh}
+    source {workflow.basedir}/scripts/scratch.sh
     scratch_start "{params.scratch_var}" {log} stop
     if [ -n "$LOCAL_ROOT" ]; then
       # Trinity accepts only an output folder with "trinity" in its name
@@ -73,7 +72,6 @@ rule rnaspades:
     "../envs/rnaspades.yaml"
   params:
     scratch_var=SCRATCH_VAR,
-    scratch_sh=SCRATCH_SH,
     strand_specific=config["strand_specific"],
     kmers=config["kmers"]
   threads:
@@ -94,7 +92,7 @@ rule rnaspades:
     # folder is copied to the run folder at the end. Otherwise it works in the run folder.
     OUT=results/assembly/rnaspades
     SPADES_OUT=$OUT
-    source {params.scratch_sh}
+    source {workflow.basedir}/scripts/scratch.sh
     on_failure() {{
       echo "rnaspades stopped with code $rc, so $WORK/rnaspades goes to $OUT" &>> {log}
       mkdir -p "$OUT" &>> {log}

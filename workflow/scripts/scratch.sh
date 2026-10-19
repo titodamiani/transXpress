@@ -36,3 +36,56 @@ scratch_on_exit() {
   rm -rf "$WORK"
   exit $rc
 }
+
+
+# The work folder of align_reads and kallisto, which both run align_and_estimate_abundance.pl.
+#
+#   abundance_start RULE VAR LOG OUT_DIR TRANSCRIPTOME GENE_MAP SAMPLES   ...   abundance_finish
+#
+# align_and_estimate_abundance.pl writes the indexes beside the transcriptome and one folder per
+# replicate into the folder it runs in, so it runs in a folder that holds links to the transcriptome
+# and the gene map, and a samples file with the full read paths. That folder is OUT_DIR, the tool folder
+# of the rule, or a folder on the node's local disk when scratch_start finds one. All paths are relative
+# to the run folder. abundance_start sets RUN, LOG, OUT and WORK and goes to the work folder.
+# abundance_finish removes the links and the samples file. With a node-local folder, it copies
+# everything else to OUT_DIR. After an error, the files go to OUT_DIR, where they would stand without
+# the node-local folder.
+
+abundance_start() {
+  ABUNDANCE_RULE=$1
+  local var=$2
+  RUN=$(pwd)
+  LOG="$RUN/$3"
+  ABUNDANCE_OUT_DIR=$4
+  : > "$LOG"
+  OUT="$RUN/$4"
+  mkdir -p "$OUT"
+  scratch_start "$var" "$LOG" stop abundance_on_failure
+  if [ -z "$LOCAL_ROOT" ]; then WORK="$OUT"; fi
+  cd "$WORK"
+  ln -sfn "$RUN/$5" transcriptome.fasta
+  ln -sfn "$RUN/$6" transcriptome.gene_trans_map
+  awk -v run="$RUN" 'BEGIN { OFS = "\t" } { for (i = 3; i <= NF; i++) $i = run "/" $i; print }' "$RUN/$7" > samples_trimmed.txt
+}
+
+abundance_copy_back() {
+  ( cd "$WORK" && find . -mindepth 1 -maxdepth 1 ! -type l ! -name samples_trimmed.txt -exec cp -rp -t "$OUT" {} + )
+}
+
+abundance_on_failure() {
+  cd "$RUN"
+  echo "$ABUNDANCE_RULE stopped with code $rc, so the files in $WORK go to $ABUNDANCE_OUT_DIR" &>> "$LOG"
+  abundance_copy_back &>> "$LOG"
+}
+
+abundance_finish() {
+  # the links and the samples file serve only this rule
+  rm -f transcriptome.fasta transcriptome.gene_trans_map samples_trimmed.txt
+  if [ -n "$LOCAL_ROOT" ]; then
+    local size start
+    size=$(du -sh "$WORK" | cut -f1)
+    start=$(date +%s)
+    abundance_copy_back &>> "$LOG"
+    echo "copied $size from $WORK to $ABUNDANCE_OUT_DIR in $(( $(date +%s) - start )) s" &>> "$LOG"
+  fi
+}

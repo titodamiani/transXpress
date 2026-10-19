@@ -11,6 +11,8 @@ import sys
 import uuid
 
 output, config, params = snakemake.output, snakemake.config, snakemake.params
+# the workflow folder of this clone: the folder above scripts/
+basedir = os.path.dirname(snakemake.scriptdir)
 
 def field(path, key):
   try:
@@ -38,7 +40,7 @@ if not os_name:
 
 try:
   commit = subprocess.check_output(
-    ["git", "-C", params.basedir, "rev-parse", "HEAD"],
+    ["git", "-C", basedir, "rev-parse", "HEAD"],
     stderr=subprocess.DEVNULL).decode().strip()
 except Exception:
   commit = "unknown"
@@ -122,7 +124,7 @@ def main_env_versions():
 # named env, which the run does not build (signalp, targetp).
 platform_name = {("Linux", "x86_64"): "linux-64", ("Linux", "aarch64"): "linux-aarch64",
   ("Darwin", "x86_64"): "osx-64", ("Darwin", "arm64"): "osx-arm64"}.get((platform.system(), platform.machine()), "")
-envs_dir = os.path.join(params.basedir, "envs")
+envs_dir = os.path.join(basedir, "envs")
 tools = []
 for env_file in sorted(glob.glob(os.path.join(envs_dir, "*.yaml"))):
   with open(env_file) as handle:

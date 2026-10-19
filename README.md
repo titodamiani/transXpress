@@ -462,7 +462,6 @@ How `compare_runs.py` compares:
 
 ### Differences that the test does not cover
 
-* FastQC writes the date of the run into its html report. Two runs on different days differ there. The CI runs both runs of a pair on one day.
 * TargetP output depends on the number of CPUs of its job: with more CPUs, some probabilities differ in the 6th decimal. `targetp_parallel` asks for 1 thread, and on Slurm each of its jobs gets 1 CPU. The test runs have TargetP off.
 * Trinity: `trinity.Trinity.fasta` and its gene map have their records in another order in each run, so `allowed_diffs.tsv` skips them. `transcriptome.fasta` holds the records sorted. On real data the transcripts differ too, also with `--inchworm_cpu 1` (see [Notes on results](#notes-on-results)).
 * rnaSPAdes writes the platform of the system it runs on into `results/assembly/rnaspades/params.txt`, with the glibc version. A run in the main image and a run in conda mode on a host with another glibc differ in that line.
@@ -561,7 +560,7 @@ Ask your cluster documentation which variable that is. On some clusters `$TMPDIR
 
 In a profile (`config:`) or with `--config` on the command line, write the name without its `$`, for example `scratch: "SCRATCH"`. Snakemake passes these values to each cluster job on the `sbatch` line, and the shell there would put the folder of the main job in place of `$SCRATCH`.
 
-With the key set, every job gets that folder as its temporary folder: Snakemake sets `TMPDIR`, `TMP` and `TEMP` of the job to it. `signalp_parallel`, `targetp_parallel` and `tmhmm_parallel` write their work files there. Five rules make their own folder under it, work there, and copy their files to the run folder when they end:
+With the key set, every job gets that folder as its temporary folder: Snakemake sets `TMPDIR`, `TMP` and `TEMP` of the job to it. A `tmpdir` value for one rule, for example `--set-resources fastqc:tmpdir=/data/tmp`, replaces it for that rule. `signalp_parallel`, `targetp_parallel` and `tmhmm_parallel` write their work files there. Five rules make their own folder under it, work there, and copy their files to the run folder when they end:
 
 | Rule | Works on the local disk | Copied to the run folder |
 |---|---|---|

@@ -34,7 +34,8 @@ rule trimmomatic_parallel:
   conda:
     "../envs/trimmomatic.yaml"
   params:
-    trimmomatic=trimmomatic_parameters
+    # a function, because Snakemake takes {adapters} in a plain string for a wildcard
+    trimmomatic=lambda wildcards: str(config["trimmomatic_parameters"])
   threads:
     8
   resources:
@@ -50,13 +51,18 @@ rule trimmomatic_parallel:
       touch {output}
       exit 0
     fi
+    # {{adapters}} in the trimmomatic parameters stands for the adapter file that ships with transXpress. The
+    # shell fills in its path, so the path of the clone is not a param and a run can go on from another clone.
+    ADAPTERS=$(cd {workflow.basedir}/../resources && pwd)/adapters.fasta
+    TRIMMOMATIC_PARAMETERS='{params.trimmomatic}'
+    TRIMMOMATIC_PARAMETERS=${{TRIMMOMATIC_PARAMETERS//'{{adapters}}'/$ADAPTERS}}
     # the output lines hold the fields separated by one space
     OUT=results/trimmomatic/reads/{wildcards.job_index}
     if [ -n "$R_READS" ]; then
-      trimmomatic PE -threads {threads} $F_READS $R_READS $OUT.R1-P.qtrim.fastq.gz $OUT.R1-U.qtrim.fastq.gz $OUT.R2-P.qtrim.fastq.gz $OUT.R2-U.qtrim.fastq.gz {params.trimmomatic} &>> {log}
+      trimmomatic PE -threads {threads} $F_READS $R_READS $OUT.R1-P.qtrim.fastq.gz $OUT.R1-U.qtrim.fastq.gz $OUT.R2-P.qtrim.fastq.gz $OUT.R2-U.qtrim.fastq.gz $TRIMMOMATIC_PARAMETERS &>> {log}
       echo $SAMPLE $REPLICATE $OUT.R1-P.qtrim.fastq.gz $OUT.R2-P.qtrim.fastq.gz > {output} 2>> {log}
     else
-      trimmomatic SE -threads {threads} $F_READS $OUT.U.qtrim.fastq.gz {params.trimmomatic} &>> {log}
+      trimmomatic SE -threads {threads} $F_READS $OUT.U.qtrim.fastq.gz $TRIMMOMATIC_PARAMETERS &>> {log}
       echo $SAMPLE $REPLICATE $OUT.U.qtrim.fastq.gz > {output} 2>> {log}
     fi
     """

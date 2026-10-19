@@ -1,18 +1,10 @@
 import functools
 import hashlib
 import os
-import sys
-import shutil
-import re
-import csv
-import Bio.SeqIO
-import subprocess
 import tempfile
 from snakemake.exceptions import WorkflowError
 from snakemake.settings.types import DeploymentMethod
 from snakemake.utils import min_version, validate
-from Bio.Seq import Seq
-import pandas as pd
 
 min_version("9.27.0")
 
@@ -71,7 +63,7 @@ SIGNALP_CONTAINER = tool_container("signalp_container", SIGNALP_ORGANISM)
 TARGETP_CONTAINER = tool_container("targetp_container", TARGETP_ORGANISM)
 
 # The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
-ANNOTATION_CHUNK = {split: config["annotation_chunk_" + split] for split in ["fasta", "orfs", "pep"]}
+ANNOTATION_CHUNK = {split: config[f"annotation_chunk_{split}"] for split in ["fasta", "orfs", "pep"]}
 
 # The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH" or
 # "SCRATCH". "" runs every rule in the run folder. The heavy rules read the variable with bash, inside
@@ -86,7 +78,7 @@ def job_tmpdir(wildcards):
   The temporary folder of a job: the folder in the variable that the scratch key names, or the
   system default when the key is "" or the variable is not set. Snakemake calls this inside the job.
   """
-  return (os.environ.get(SCRATCH_VAR, "") if SCRATCH_VAR else "") or tempfile.gettempdir()
+  return os.environ.get(SCRATCH_VAR) or tempfile.gettempdir()
 
 # The folder of the annotation databases. "resources/db" keeps one copy in each run folder, which the
 # pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
@@ -100,26 +92,96 @@ if DB_SHARED:
   if not LINEAGE:
     raise ValueError("A shared db_dir needs a named BUSCO lineage, for example lineage: \"viridiplantae_odb12\"")
   db_missing = [path for path in [
-      DB_DIR + "/versions.txt",
-      DB_DIR + "/uniprot_sprot.fasta",
-      DB_DIR + "/Pfam-A.hmm",
-      DB_DIR + "/Rfam.cm",
-      DB_DIR + "/busco_downloads/lineages/" + LINEAGE]
+      f"{DB_DIR}/versions.txt",
+      f"{DB_DIR}/uniprot_sprot.fasta",
+      f"{DB_DIR}/Pfam-A.hmm",
+      f"{DB_DIR}/Rfam.cm",
+      f"{DB_DIR}/busco_downloads/lineages/{LINEAGE}"]
     if not os.path.exists(path)]
   if db_missing:
     raise ValueError("db_dir %s lacks:\n  %s\nFill the folder with the download_databases target, see README.md."
       % (DB_DIR, "\n  ".join(db_missing)))
 
-# for executable in ["samtools", "bowtie2", "kallisto", "signalp6", "targetp", "Trinity", "blastx", "blastp", "makeblastdb", "cmscan", "hmmscan", "fastqc", "rnaspades.py", "seqkit", "R"]:
-#    if not shutil.which(executable):
-#        sys.stderr.write("Warning: Cannot find %s in your PATH\n" % (executable))
+@functools.lru_cache(maxsize=None)
+def check_samples(path):
+  """
+  Checks the samples file before any job starts. Every line that is not empty has 3 columns (sample,
+  replicate and one reads file) or 4 columns (a second reads file), separated by white space. A replicate
+  name appears once, and every reads file exists.
+  """
+  if not os.path.isfile(path):
+    raise WorkflowError("The samples file %s does not exist. samples_file in config.yaml names it." % path)
+  problems = []
+  replicates = {}
+  with open(path) as handle:
+    for number, line in enumerate(handle, 1):
+      fields = line.split()
+      if not fields:
+        continue
+      if len(fields) not in (3, 4):
+        problems.append("line %d has %d columns, and it needs 3 or 4" % (number, len(fields)))
+        continue
+      if fields[1] in replicates:
+        problems.append("line %d repeats the replicate name %s of line %d" % (number, fields[1], replicates[fields[1]]))
+      replicates.setdefault(fields[1], number)
+      for reads in fields[2:]:
+        if not os.path.isfile(reads):
+          problems.append("line %d: the reads file %s does not exist" % (number, reads))
+  if problems:
+    raise WorkflowError("The samples file %s has problems:\n  %s" % (path, "\n  ".join(problems)))
+  return path
 
-#TRINITY_EXECUTABLE_PATH=shutil.which("Trinity")
-#TRINITY_HOME=os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))) ##Have to resolve the symbolic link that conda makes
 
-# https://github.com/griffithlab/rnaseq_tutorial/wiki/Trinity-Assembly-And-Analysis
+def checked_samples_file(wildcards):
+  return check_samples(config["samples_file"])
 
-# These rules don't need to be sent to a cluster
+
+def trimmomatic_completed_parallel_jobs(wildcards):
+  """
+  The marker files of the trimmomatic_parallel jobs, one for each line of the samples file.
+  """
+  parallel_dir = checkpoints.trimmomatic_split.get(**wildcards).output[0]
+  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "sample_{job_index}")).job_index)
+  return expand(os.path.join(parallel_dir, "completed_{job_index}"), job_index=job_ids)
+
+
+def transcriptome_copy_input(wildcards):
+  if config["assembler"] == "rnaspades":
+    return {"transcriptome": getattr(rules.rnaspades.output, RNASPADES_FILTER)}
+  return {"transcriptome": rules.trinity.output.transcriptome,
+          "gene_trans_map": rules.trinity.output.gene_trans_map}
+
+
+def abundance_strand_option():
+  """
+  The strand option of align_and_estimate_abundance.pl. With Trinity, strand_specific is already a
+  Trinity option, for example "--SS_lib_type RF". With rnaSPAdes, "--ss rf" and "--ss fr" become
+  "--SS_lib_type RF" and "--SS_lib_type FR", and any other value gives no option.
+  """
+  if config["assembler"] == "rnaspades":
+    return {"--ss rf": "--SS_lib_type RF", "--ss fr": "--SS_lib_type FR"}.get(config["strand_specific"], "")
+  return config["strand_specific"]
+
+
+def get_igv(wildcards):
+  # one indexed alignment per replicate, the second column of the samples file
+  with open(check_samples(config["samples_file"])) as handle:
+    replicates = [line.split()[1] for line in handle if line.split()]
+  return expand("results/expression/bowtie2_rsem/igv/{sample}.sorted.bam.bai", sample=replicates)
+
+
+def parallel_annotation_tasks(wildcards):
+  """
+  The chunk outputs of one annotation tool for one sequence set.
+  """
+  parallel_dir = checkpoints.fasta_split.get(split=wildcards["split"]).output[0]
+  # sorted by number, so the merged file follows the order of the sequences at any chunk size.
+  # glob_wildcards returns the folder order, which differs between runs
+  job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "{index}.%s" % wildcards["split"])).index, key=int)
+  return expand("results/annotation/chunks/{task}/{index}.out", index=job_ids, task=wildcards["task"])
+
+# These rules run in the main job, not as cluster jobs
 localrules: all, clean, delete_intermediates, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
 # A rule with a wildcard keeps its logs in logs/<rule>/, and the wildcard is only in the file name.

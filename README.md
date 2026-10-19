@@ -81,10 +81,7 @@ The pin file of each env gives the exact version and build of every package. `re
    cond_B      cond_B_rep1 B_rep1_left.fq    B_rep1_right.fq
    cond_B      cond_B_rep2 B_rep2_left.fq    B_rep2_right.fq
    ~~~
-   The file names must not hold spaces. [tests/test_samples.txt](./tests/test_samples.txt) is an example. `sra_download.sh` downloads reads from SRA, where SRR0000000 is an SRA readset ID, for example SRR3883773:
-   ~~~~
-   ./sra_download.sh <SRR0000000> <SRR0000001> <...>
-   ~~~~
+   The file names must not hold spaces. [tests/test_samples.txt](./tests/test_samples.txt) is an example.
 
 8. Read `config.yaml` and set the keys for your data. Check at least `assembler`, `strand_specific`, `lineage`, `signalp` and `targetp`. See [Configuration](#configuration).
 

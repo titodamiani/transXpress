@@ -48,9 +48,11 @@ rule all:
 
 # Every job gets its temporary folder (TMPDIR, TMP and TEMP) from job_tmpdir, so the temporary files of
 # the tools go to the node's local disk when the scratch key is set. Snakemake evaluates the tmpdir
-# resource inside the job, where the variable is set.
+# resource inside the job, where the variable is set. A tmpdir value of --set-resources is already in
+# the rule at this point, and it stays.
 for workflow_rule in workflow.rules:
-  workflow_rule.resources["tmpdir"] = job_tmpdir
+  if "tmpdir" not in workflow_rule.resources:
+    workflow_rule.resources["tmpdir"] = job_tmpdir
   # A rule without a conda env runs in the main env, outside the image. Its tools and Python packages come
   # from that env, and a script: rule loads the snakemake package of that env, which needs its Python.
   if workflow_rule.is_containerized and not workflow_rule.conda_env:

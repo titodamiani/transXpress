@@ -70,8 +70,6 @@ ANNOTATION_CHUNK = {split: config[f"annotation_chunk_{split}"] for split in ["fa
 # the job, because only the job knows its value.
 SCRATCH = config["scratch"] or ""
 SCRATCH_VAR = SCRATCH.lstrip("$")
-# The shell functions that the heavy rules use to work in that folder
-SCRATCH_SH = os.path.join(workflow.basedir, "scripts", "scratch.sh")
 
 def job_tmpdir(wildcards):
   """
@@ -157,10 +155,15 @@ def abundance_strand_option():
   """
   The strand option of align_and_estimate_abundance.pl. With Trinity, strand_specific is already a
   Trinity option, for example "--SS_lib_type RF". With rnaSPAdes, "--ss rf" and "--ss fr" become
-  "--SS_lib_type RF" and "--SS_lib_type FR", and any other value gives no option.
+  "--SS_lib_type RF" and "--SS_lib_type FR", and "" (unstranded reads) gives no option. Any other value
+  stops the run before the first job: rnaSPAdes takes only rf and fr, and a value that is not one of
+  them would make the expression estimates run as if the reads had no strand.
   """
   if config["assembler"] == "rnaspades":
-    return {"--ss rf": "--SS_lib_type RF", "--ss fr": "--SS_lib_type FR"}.get(config["strand_specific"], "")
+    options = {"": "", "--ss rf": "--SS_lib_type RF", "--ss fr": "--SS_lib_type FR"}
+    if config["strand_specific"] not in options:
+      raise ValueError('With rnaSPAdes, strand_specific is "", "--ss rf" or "--ss fr", not "%s"' % config["strand_specific"])
+    return options[config["strand_specific"]]
   return config["strand_specific"]
 
 

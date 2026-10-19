@@ -167,8 +167,7 @@ rule busco:
     lineage=LINEAGE,
     # a shared db_dir holds the lineage, and BUSCO must not download or update anything there
     download_option=f"--offline --download_path {DB_DIR}/busco_downloads" if DB_SHARED else "--download_path resources/busco_downloads",
-    scratch_var=SCRATCH_VAR,
-    scratch_sh=SCRATCH_SH
+    scratch_var=SCRATCH_VAR
   threads:
     config["busco_threads"]
   resources:
@@ -183,7 +182,7 @@ rule busco:
     OUT={output.out_directory}
     BUSCO_PATH=$(dirname $OUT)
     : > {log}
-    source {params.scratch_sh}
+    source {workflow.basedir}/scripts/scratch.sh
     scratch_start "{params.scratch_var}" {log} allow
     if [ -n "$LOCAL_ROOT" ]; then BUSCO_PATH=$WORK; fi
 

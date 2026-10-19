@@ -6,8 +6,9 @@ name: image
 # pins: makes the pin file <env>.linux-64.pin.txt of each env file in a clean linux-64 conda, with
 #   conda list --explicit --md5, and uploads the pin files as the artifact "pins". A pull request
 #   with an env file and no pin file fails here; commit the pin files of the artifact. A manual run
-#   (workflow_dispatch) makes the pin files of all env files again. An env file with a name: is a
-#   named env, which Snakemake does not build, so it gets no pin file.
+#   of this workflow (workflow_dispatch) makes the pin files of all env files again. A manual run of
+#   test.yml, which calls this workflow, builds the image like any other run of test.yml. An env file
+#   with a name: is a named env, which Snakemake does not build, so it gets no pin file.
 # image: checks the env paths in Dockerfile against snakemake --containerize, then builds the image
 #   and pushes it under the tag of MAIN_IMAGE, unless ghcr.io holds it. A tag on ghcr.io that holds an
 #   image of another Dockerfile stops the job: a new Dockerfile needs a new tag.
@@ -32,7 +33,7 @@ jobs:
           envs=""
           for env in workflow/envs/*.yaml; do
             grep -q '^name:' "$env" && continue
-            if [ "${{ github.event_name }}" = workflow_dispatch ] || [ ! -f "${env%.yaml}.linux-64.pin.txt" ]; then
+            if [ "${{ github.workflow }}" = image ] || [ ! -f "${env%.yaml}.linux-64.pin.txt" ]; then
               envs="$envs $env"
             fi
           done
@@ -64,14 +65,14 @@ jobs:
           name: pins
           path: workflow/envs/*.linux-64.pin.txt
       - name: Stop when an env file has no pin file
-        if: steps.find.outputs.envs != '' && github.event_name != 'workflow_dispatch'
+        if: steps.find.outputs.envs != '' && github.workflow != 'image'
         run: |
           echo "::error::Commit the pin files of the artifact \"pins\" for:${{ steps.find.outputs.envs }}"
           exit 1
 
   image:
     needs: pins
-    if: github.event_name != 'workflow_dispatch'
+    if: github.workflow != 'image'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:

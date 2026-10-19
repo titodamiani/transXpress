@@ -462,7 +462,6 @@ How `compare_runs.py` compares:
 
 ### Differences that the test does not cover
 
-* FastQC writes the date of the run into its html report. Two runs on different days differ there. The CI runs both runs of a pair on one day.
 * TargetP output depends on the number of CPUs of its job: with more CPUs, some probabilities differ in the 6th decimal. `targetp_parallel` asks for 1 thread, and on Slurm each of its jobs gets 1 CPU. The test runs have TargetP off.
 * Trinity: `trinity.Trinity.fasta` and its gene map have their records in another order in each run, so `allowed_diffs.tsv` skips them. `transcriptome.fasta` holds the records sorted. On real data the transcripts differ too, also with `--inchworm_cpu 1` (see [Notes on results](#notes-on-results)).
 * rnaSPAdes writes the platform of the system it runs on into `results/assembly/rnaspades/params.txt`, with the glibc version. A run in the main image and a run in conda mode on a host with another glibc differ in that line.

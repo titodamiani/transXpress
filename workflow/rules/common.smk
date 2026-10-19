@@ -28,12 +28,6 @@ PFAM_RELEASE = config["pfam_release"]
 RFAM_RELEASE = config["rfam_release"]
 SPROT_RELEASE = config["sprot_release"]
 
-# The adapter file that ships with transXpress. {adapters} in trimmomatic_parameters stands for its path.
-ADAPTERS = os.path.normpath(os.path.join(workflow.basedir, "..", "resources", "adapters.fasta"))
-
-def trimmomatic_parameters(wildcards):
-  return str(config["trimmomatic_parameters"]).replace("{adapters}", ADAPTERS)
-
 # The ORF set that transcriptome.pep holds and the downstream rules read. Both sets are always saved.
 TRANSDECODER_ORFS = config["transdecoder_orfs"]
 TRANSDECODER_ORFS_FILE = {"all": "results/transdecoder/transcriptome_all_orfs.pep", "single_best": "results/transdecoder/transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
@@ -254,7 +248,6 @@ rule run_info:
   output:
     "results/run_info.txt"
   params:
-    basedir=workflow.basedir,
     deployment=DEPLOYMENT,
     # the rule envs come from the main image only when apptainer is a deployment method
     image=MAIN_IMAGE if DeploymentMethod.APPTAINER in workflow.deployment_settings.deployment_method else "",

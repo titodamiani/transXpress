@@ -301,7 +301,7 @@ Inside a job, the `slurm` plugin prints a warning and removes the `SLURM_` varia
 You can run specific steps of the pipeline by specifying a rule or a resulting file:
 ~~~
 # run only the rules that make the FastQC and MultiQC report of the input data, to check its quality
-snakemake --profile /path/to/transXpress/profiles/slurm results/qc/multiqc_before_trim.txt
+snakemake --profile /path/to/transXpress/profiles/slurm results/qc/multiqc/before_trim/multiqc_fastqc.txt
 ~~~
 ~~~
 # run only the rules to produce the samples_trimmed.txt file
@@ -319,9 +319,9 @@ A run writes into `results/`, with one folder per step. Each step folder holds i
   resources/     db/  busco_downloads/
   results/
     run_info.txt
-    qc/            fastqc_before_trim/  fastqc_after_trim/  multiqc_before_trim/  multiqc_after_trim/
-                   multiqc_before_trim.txt  multiqc_after_trim.txt
-                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
+    qc/            fastqc/        before_trim/  after_trim/
+                                  WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
+                   multiqc/       before_trim/  after_trim/  (each holds multiqc_report.html and multiqc_fastqc.txt)
                    busco/  busco_report.txt
                    transcriptome_stats.txt  transcriptome_exN50.tsv  ExN50_plot.pdf
     trimmomatic/   samples_trimmed.txt  samples_trimmed.yaml

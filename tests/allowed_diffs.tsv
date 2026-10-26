@@ -10,13 +10,14 @@ results/assembly/trinity.Trinity.fasta*	skip	Trinity writes the same records in 
 results/expression/kallisto/*/abundance.h5	skip	the HDF5 file holds the start time of kallisto
 results/expression/kallisto/*/run_info.json	strip:"start_time":	kallisto writes its start time
 results/qc/busco/logs/*	skip	the logs hold memory addresses, speeds and random folder names
+results/qc/busco/run_viridiplantae_odb12/busco_sequences.tar.gz	skip	the tar archive holds the file times
 results/qc/busco/run_viridiplantae_odb12/hmmer_output.tar.gz	skip	the hmmsearch tables in the archive hold the date and the options of the run, and BUSCO's .checkpoint file holds its times
 results/qc/busco/run_viridiplantae_odb12/metaeuk_output/*	skip	BUSCO writes the hits in another order and with a random ID, and the lines are the same after sorting
-results/qc/fastqc_*_trim/*_fastqc.html	strip:header_filename	FastQC writes the date of the run into the line that names the file
-results/qc/fastqc_*_trim/*_fastqc.zip	skip	the zip archive holds the file times; multiqc_fastqc.txt holds the table
-results/qc/multiqc_*_trim/multiqc_data/multiqc.log	skip	the log holds the temporary folder of the job
-results/qc/multiqc_*_trim/multiqc_data/multiqc.parquet	skip	a binary file; multiqc_fastqc.txt holds the table
-results/qc/multiqc_*_trim/multiqc_data/multiqc_data.json	strip:"report_creation_date":	the file holds the time of the report
-results/qc/multiqc_*_trim/multiqc_report.html	skip	the report holds a random ID, reportUuid
+results/qc/fastqc/*_trim/*_fastqc.html	strip:header_filename	FastQC writes the date of the run into the line that names the file
+results/qc/fastqc/*_trim/*_fastqc.zip	skip	the zip archive holds the file times; multiqc_fastqc.txt holds the table
+results/qc/multiqc/*_trim/multiqc_data/multiqc.log	skip	the log holds the temporary folder of the job
+results/qc/multiqc/*_trim/multiqc_data/multiqc.parquet	skip	a binary file; multiqc_fastqc.txt holds the table
+results/qc/multiqc/*_trim/multiqc_data/multiqc_data.json	strip:"report_creation_date":	the file holds the time of the report
+results/qc/multiqc/*_trim/multiqc_report.html	skip	the report holds a random ID, reportUuid
 results/run_info.txt	strip:^(host|memory_total|transxpress_commit|deployment|image|image_file)\t	the file names the node, its memory, the git commit, the deployment methods and the main image of the run
 results/transdecoder/longorfs/*/__checkpoints_longorfs/pipeliner.*.cmds	skip	the file name holds the process ID

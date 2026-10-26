@@ -5,7 +5,7 @@ rule fastqc:
   input:
     samples=lambda wildcards: config["samples_file"] if wildcards.stage == "before" else "results/trimmomatic/samples_trimmed.txt"
   output:
-    directory("results/qc/fastqc_{stage}_trim")
+    directory("results/qc/fastqc/{stage}_trim")
   wildcard_constraints:
     stage="before|after"
   log:
@@ -42,10 +42,10 @@ rule multiqc:
   Creates multiQC report from individual fastQC reports, before or after the trimming.
   """
   input:
-    "results/qc/fastqc_{stage}_trim"
+    "results/qc/fastqc/{stage}_trim"
   output:
-    out_dir=directory("results/qc/multiqc_{stage}_trim"),
-    report="results/qc/multiqc_{stage}_trim.txt"
+    out_dir=directory("results/qc/multiqc/{stage}_trim"),
+    report="results/qc/multiqc/{stage}_trim/multiqc_fastqc.txt"
   wildcard_constraints:
     stage="before|after"
   log:
@@ -62,7 +62,8 @@ rule multiqc:
     # MultiQC stops when the locale is not UTF-8
     export LC_ALL=C.UTF-8
     export LANG=C.UTF-8
-    mkdir {output.out_dir} &> {log}
+    # Snakemake makes this folder when it makes the folder of the report in it
+    mkdir -p {output.out_dir} &> {log}
     multiqc -o {output.out_dir} {input} &>> {log}
     cp {output.out_dir}/multiqc_data/multiqc_fastqc.txt {output.report} &>> {log}
     """
@@ -73,9 +74,9 @@ rule fastqc_before_trim_warnings:
   Prints warnings for FastQC modules which produced some warnings or fails of the input data.
   """
   input:
-    fastqc_report="results/qc/multiqc_before_trim.txt"
+    fastqc_report="results/qc/multiqc/before_trim/multiqc_fastqc.txt"
   output:
-    warning_file="results/qc/WARNING_fastqc_before_trim_overview.txt"
+    warning_file="results/qc/fastqc/WARNING_fastqc_before_trim_overview.txt"
   log:
     "logs/fastqc_before_trim_warnings.log"
   threads:
@@ -94,10 +95,10 @@ rule compare_qc_after_trim:
   OVERREPRESENTED SEQUENCES and ADAPTER CONTENT modules of FastQC.
   """
   input:
-    before="results/qc/multiqc_before_trim.txt",
-    after="results/qc/multiqc_after_trim.txt"
+    before="results/qc/multiqc/before_trim/multiqc_fastqc.txt",
+    after="results/qc/multiqc/after_trim/multiqc_fastqc.txt"
   output:
-    result="results/qc/FastQC_comparison_after_trim.txt"
+    result="results/qc/fastqc/FastQC_comparison_after_trim.txt"
   log:
     "logs/compare_qc_after_trim.log"
   threads:

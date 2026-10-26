@@ -185,7 +185,7 @@ jobs:
           path: |
             t1-conda/logs
             t1-conda/.snakemake/log
-            t1-conda/results/qc/fastqc_*_trim/*.html
+            t1-conda/results/qc/fastqc/*_trim/*.html
             t1-image/logs
             t1-image/.snakemake/log
-            t1-image/results/qc/fastqc_*_trim/*.html
+            t1-image/results/qc/fastqc/*_trim/*.html

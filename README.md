@@ -322,7 +322,7 @@ A run writes into `results/`, with one folder per step. Each step folder holds i
     qc/            fastqc/        before_trim/  after_trim/
                                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
                    multiqc/       before_trim/  after_trim/  (each holds multiqc_report.html and multiqc_fastqc.txt)
-                   assembly/      transcriptome_stats.txt  transcriptome_exN50.tsv  ExN50_plot.pdf
+                   assembly/      transcriptome_stats.txt  transcriptome_exN50_tmm.tsv  transcriptome_exN50_tmm.pdf
                                   busco/  busco_report.txt
     trimmomatic/   samples_trimmed.txt  samples_trimmed.yaml
                    trimmed_reads/ the trimmed reads

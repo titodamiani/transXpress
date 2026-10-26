@@ -120,8 +120,8 @@ rule trinity_stats:
     expression=TMM_ISOFORM
   output:
     stats="results/qc/assembly/transcriptome_stats.txt",
-    exN50="results/qc/assembly/transcriptome_exN50.tsv",
-    exN50plot="results/qc/assembly/ExN50_plot.pdf"
+    exN50="results/qc/assembly/transcriptome_exN50_tmm.tsv",
+    exN50plot="results/qc/assembly/transcriptome_exN50_tmm.pdf"
   log:
     "logs/trinity_stats.log"
   conda:
@@ -143,11 +143,12 @@ rule trinity_stats:
     # TrinityStats.pl names the assembler "trinity" in its output
     $TRINITY_HOME/util/TrinityStats.pl {input.transcriptome} 2> {log} | sed -e 's/trinity/{params.assembler}/g' > {output.stats}
     # contig_ExN50_statistic.pl writes its .E-inputs table and the R script writes ExN50_plot.pdf into the
-    # folder they run in, so both run in the folder of the outputs
+    # folder they run in, so both run in the folder of the outputs. The R script gives the plot a fixed name.
     RUN=$(pwd)
     cd $(dirname {output.exN50})
     $TRINITY_HOME/util/misc/contig_ExN50_statistic.pl "$RUN/{input.expression}" "$RUN/{input.transcriptome}" > $(basename {output.exN50}) 2>> "$RUN/{log}"
     $TRINITY_HOME/util/misc/plot_ExN50_statistic.Rscript $(basename {output.exN50}) &>> "$RUN/{log}"
+    mv ExN50_plot.pdf $(basename {output.exN50plot})
     """
 
 

@@ -32,6 +32,10 @@ SPROT_RELEASE = config["sprot_release"]
 TRANSDECODER_ORFS = config["transdecoder_orfs"]
 TRANSDECODER_ORFS_FILE = {"all": "results/transdecoder/transcriptome_all_orfs.pep", "single_best": "results/transdecoder/transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
 
+# The isoform expression matrix that ExN50 and the annotated FASTA headers read: the TPM of each transcript,
+# scaled across the libraries with TMM. The ExN50 page of the Trinity wiki uses the TMM matrix.
+TMM_ISOFORM = "results/expression/transcriptome_tmm_isoform.tsv"
+
 # The rnaSPAdes transcript set that becomes transcriptome.fasta. rnaSPAdes always writes all three.
 RNASPADES_FILTER = config["rnaspades_filter"]
 
@@ -99,7 +103,8 @@ def check_samples(path):
   """
   Checks the samples file before any job starts. Every line that is not empty has 3 columns (sample,
   replicate and one reads file) or 4 columns (a second reads file), separated by white space. A replicate
-  name appears once, and every reads file exists.
+  name appears once, and every reads file exists. The file has two or more libraries, because the TMM
+  normalization of the expression needs them.
   """
   if not os.path.isfile(path):
     raise WorkflowError("The samples file %s does not exist. samples_file in config.yaml names it." % path)
@@ -119,6 +124,9 @@ def check_samples(path):
       for reads in fields[2:]:
         if not os.path.isfile(reads):
           problems.append("line %d: the reads file %s does not exist" % (number, reads))
+  # The TMM normalization of the expression needs two or more libraries
+  if len(replicates) < 2:
+    problems.append("it has %d libraries, and it needs 2 or more" % len(replicates))
   if problems:
     raise WorkflowError("The samples file %s has problems:\n  %s" % (path, "\n  ".join(problems)))
   return path

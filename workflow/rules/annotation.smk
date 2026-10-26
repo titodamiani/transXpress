@@ -138,7 +138,12 @@ rule sprot_blastp_parallel:
     runtime="4h"
   shell:
     """
-    blastp -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {params.evalue} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
+    # The tool writes {output}.part. The chunk gets its name only when blastp has ended without an error
+    # (-outfmt 6 has no end line to check), so a job that is killed or hangs leaves no cut file under the name
+    # Snakemake trusts.
+    rm -f {output}.part
+    blastp -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {params.evalue} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output}.part &> {log}
+    mv {output}.part {output}
     """
 
 
@@ -164,7 +169,12 @@ rule sprot_blastx_parallel:
     runtime=config["sprot_blastx_runtime"]
   shell:
     """
-    blastx -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {params.evalue} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output} &> {log}
+    # The tool writes {output}.part. The chunk gets its name only when blastx has ended without an error
+    # (-outfmt 6 has no end line to check), so a job that is killed or hangs leaves no cut file under the name
+    # Snakemake trusts.
+    rm -f {output}.part
+    blastx -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {params.evalue} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output}.part &> {log}
+    mv {output}.part {output}
     """
 
 

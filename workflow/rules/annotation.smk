@@ -75,7 +75,12 @@ rule rfam_parallel:
     runtime="4h"
   shell:
     """
-    cmscan -E {params.evalue} --rfam --cpu {threads} --tblout {output} {input[db]} {input[fasta]} &> {log}
+    # The tool writes {output}.part. The chunk gets its name only when the file ends with the "# [ok]" line
+    # of a finished cmscan, so a job that is killed or hangs leaves no cut file under the name Snakemake trusts.
+    rm -f {output}.part
+    cmscan -E {params.evalue} --rfam --cpu {threads} --tblout {output}.part {input[db]} {input[fasta]} &> {log}
+    tail -n 1 {output}.part | grep -qx '# \\[ok\\]' || {{ echo "{output}.part does not end with # [ok]" >> {log}; exit 1; }}
+    mv {output}.part {output}
     """
 
 
@@ -101,8 +106,13 @@ rule pfam_parallel:
     runtime="4h"
   shell:
     """
+    # The tool writes {output}.part. The chunk gets its name only when the file ends with the "# [ok]" line
+    # of a finished hmmscan, so a job that is killed or hangs leaves no cut file under the name Snakemake trusts.
+    rm -f {output}.part
     # Transdecoder requires --domtblout output
-    hmmscan -E {params.evalue} --cpu {threads} --domtblout {output} {input[db]} {input[fasta]} &> {log}
+    hmmscan -E {params.evalue} --cpu {threads} --domtblout {output}.part {input[db]} {input[fasta]} &> {log}
+    tail -n 1 {output}.part | grep -qx '# \\[ok\\]' || {{ echo "{output}.part does not end with # [ok]" >> {log}; exit 1; }}
+    mv {output}.part {output}
     """
 
 

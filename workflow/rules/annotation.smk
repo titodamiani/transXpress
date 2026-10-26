@@ -229,7 +229,11 @@ rule signalp_parallel:
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/signalp.XXXXXX")
     echo "work folder: $TMP" &> {log}
     signalp6 --fastafile {input} --organism {params.organism} --output_dir $TMP/out --format none --mode fast &>> {log}
-    mv $TMP/out/prediction_results.txt {output}
+    # The temporary folder can be on another disk than the run folder, so the move there is a copy. The copy goes
+    # to {output}.part, and the rename gives the chunk its name only when the copy is whole.
+    rm -f {output}.part
+    mv $TMP/out/prediction_results.txt {output}.part
+    mv {output}.part {output}
     rm -r $TMP
     """
 
@@ -267,7 +271,11 @@ rule targetp_parallel:
     echo "work folder: $TMP" &> "$RUN/{log}"
     cd $TMP
     targetp -fasta "$RUN/{input}" -format short -org {params.organism} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
-    mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}" &>> "$RUN/{log}"
+    # The temporary folder can be on another disk than the run folder, so the move there is a copy. The copy goes
+    # to {output}.part, and the rename gives the chunk its name only when the copy is whole.
+    rm -f "$RUN/{output}.part"
+    mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}.part" &>> "$RUN/{log}"
+    mv "$RUN/{output}.part" "$RUN/{output}"
     cd "$RUN"
     rm -r $TMP
     """

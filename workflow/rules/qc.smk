@@ -117,7 +117,7 @@ rule trinity_stats:
   """
   input:
     transcriptome="results/assembly/transcriptome.fasta",
-    expression="results/expression/transcriptome_expression_isoform.tsv"
+    expression=TMM_ISOFORM
   output:
     stats="results/qc/assembly/transcriptome_stats.txt",
     exN50="results/qc/assembly/transcriptome_exN50.tsv",

@@ -261,7 +261,7 @@ rule annotated_fasta:
   input:
     transcriptome="results/assembly/transcriptome.fasta",
     proteome="results/transdecoder/transcriptome.pep",
-    expression="results/expression/transcriptome_expression_isoform.tsv",
+    expression=TMM_ISOFORM,
     blastx_results="results/annotation/sprotblastx_fasta.out",
     rfam_results="results/annotation/rfam_fasta.out",
     blastp_results="results/annotation/sprotblastp_orfs.out",

@@ -119,9 +119,9 @@ rule trinity_stats:
     transcriptome="results/assembly/transcriptome.fasta",
     expression="results/expression/transcriptome_expression_isoform.tsv"
   output:
-    stats="results/qc/transcriptome_stats.txt",
-    exN50="results/qc/transcriptome_exN50.tsv",
-    exN50plot="results/qc/ExN50_plot.pdf"
+    stats="results/qc/assembly/transcriptome_stats.txt",
+    exN50="results/qc/assembly/transcriptome_exN50.tsv",
+    exN50plot="results/qc/assembly/ExN50_plot.pdf"
   log:
     "logs/trinity_stats.log"
   conda:
@@ -158,8 +158,8 @@ rule busco:
   input:
     transcriptome="results/assembly/transcriptome.fasta"
   output:
-    out_directory=directory("results/qc/busco"),
-    report="results/qc/busco_report.txt"
+    out_directory=directory("results/qc/assembly/busco"),
+    report="results/qc/assembly/busco/busco_report.txt"
   log:
     "logs/busco.log"
   conda:
@@ -186,6 +186,8 @@ rule busco:
     source {workflow.basedir}/scripts/scratch.sh
     scratch_start "{params.scratch_var}" {log} allow
     if [ -n "$LOCAL_ROOT" ]; then BUSCO_PATH=$WORK; fi
+    # Snakemake makes the output folder when it makes the folder of the report in it, and BUSCO makes the folder itself
+    rm -rf $OUT
 
     # an empty or missing lineage lets BUSCO choose the lineage automatically
     if [ -z "{params.lineage}" ]; then

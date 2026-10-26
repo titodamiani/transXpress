@@ -220,7 +220,7 @@ rule delete_intermediates:
     runtime="4h"
   shell:
     """
-    rm -f results/trimmomatic/reads/*.fastq.gz
+    rm -f results/trimmomatic/trimmed_reads/*.fastq.gz
     rm -f results/expression/kallisto/transcriptome.fasta.kallisto_idx
     # the bowtie2.ok marker goes with the index, so a later align_reads run builds the index again
     rm -f results/expression/bowtie2_rsem/transcriptome.fasta.bowtie2.* results/expression/bowtie2_rsem/transcriptome.fasta.RSEM.*

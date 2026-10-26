@@ -6,7 +6,7 @@ checkpoint trimmomatic_split:
   input:
     samples=checked_samples_file
   output:
-    directory("results/trimmomatic/reads")
+    directory("results/trimmomatic/trimmed_reads")
   log:
     "logs/trimmomatic_split.log"
   threads:
@@ -26,9 +26,9 @@ rule trimmomatic_parallel:
   Processes individual read files with trimmomatic.
   """
   input:
-    "results/trimmomatic/reads/sample_{job_index}"
+    "results/trimmomatic/trimmed_reads/sample_{job_index}"
   output:
-    "results/trimmomatic/reads/completed_{job_index}"
+    "results/trimmomatic/trimmed_reads/completed_{job_index}"
   log:
     "logs/trimmomatic_parallel/{job_index}.log"
   conda:
@@ -57,7 +57,7 @@ rule trimmomatic_parallel:
     TRIMMOMATIC_PARAMETERS='{params.trimmomatic}'
     TRIMMOMATIC_PARAMETERS=${{TRIMMOMATIC_PARAMETERS//'{{adapters}}'/$ADAPTERS}}
     # the output lines hold the fields separated by one space
-    OUT=results/trimmomatic/reads/{wildcards.job_index}
+    OUT=results/trimmomatic/trimmed_reads/{wildcards.job_index}
     if [ -n "$R_READS" ]; then
       trimmomatic PE -threads {threads} $F_READS $R_READS $OUT.R1-P.qtrim.fastq.gz $OUT.R1-U.qtrim.fastq.gz $OUT.R2-P.qtrim.fastq.gz $OUT.R2-U.qtrim.fastq.gz $TRIMMOMATIC_PARAMETERS &>> {log}
       echo $SAMPLE $REPLICATE $OUT.R1-P.qtrim.fastq.gz $OUT.R2-P.qtrim.fastq.gz > {output} 2>> {log}

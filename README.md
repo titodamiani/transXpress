@@ -301,7 +301,7 @@ Inside a job, the `slurm` plugin prints a warning and removes the `SLURM_` varia
 You can run specific steps of the pipeline by specifying a rule or a resulting file:
 ~~~
 # run only the rules that make the FastQC and MultiQC report of the input data, to check its quality
-snakemake --profile /path/to/transXpress/profiles/slurm results/qc/multiqc_before_trim.txt
+snakemake --profile /path/to/transXpress/profiles/slurm results/qc/multiqc/before_trim/multiqc_fastqc.txt
 ~~~
 ~~~
 # run only the rules to produce the samples_trimmed.txt file
@@ -319,13 +319,13 @@ A run writes into `results/`, with one folder per step. Each step folder holds i
   resources/     db/  busco_downloads/
   results/
     run_info.txt
-    qc/            fastqc_before_trim/  fastqc_after_trim/  multiqc_before_trim/  multiqc_after_trim/
-                   multiqc_before_trim.txt  multiqc_after_trim.txt
-                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
-                   busco/  busco_report.txt
-                   transcriptome_stats.txt  transcriptome_exN50.tsv  ExN50_plot.pdf
+    qc/            fastqc/        before_trim/  after_trim/
+                                  WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
+                   multiqc/       before_trim/  after_trim/  (each holds multiqc_report.html and multiqc_fastqc.txt)
+                   assembly/      transcriptome_stats.txt  transcriptome_exN50.tsv  ExN50_plot.pdf
+                                  busco/  busco_report.txt
     trimmomatic/   samples_trimmed.txt  samples_trimmed.yaml
-                   reads/         the trimmed reads
+                   trimmed_reads/ the trimmed reads
     assembly/      transcriptome.fasta  transcriptome.gene_trans_map
                    rnaspades/     the rnaSPAdes output folder
                    trinity/  trinity.Trinity.fasta  trinity.Trinity.fasta.gene_trans_map
@@ -354,7 +354,7 @@ The files most analyses start from:
 | `results/annotation/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
 | `results/expression/transcriptome_expression_isoform.tsv`, `_gene.tsv` | the TMM-normalized TPM of each transcript and gene, or the TPM when TMM is not possible |
 | `results/expression/kallisto/kallisto.{isoform,gene}.counts.matrix` | the estimated read counts |
-| `results/qc/busco_report.txt` | the BUSCO score of the assembly |
+| `results/qc/assembly/busco/busco_report.txt` | the BUSCO score of the assembly |
 | `results/run_info.txt` | the host, the processor, the transXpress commit, the deployment methods, the images and the version of each tool |
 
 Two rules delete files, and neither runs unless you name it:
@@ -568,7 +568,7 @@ With the key set, every job gets that folder as its temporary folder: Snakemake 
 | `trinity` | the whole Trinity assembly, with its `read_partitions` folder | `results/assembly/trinity.Trinity.fasta` and its `.gene_trans_map` |
 | `kallisto` | the index and the per replicate results | every file, over the files in `results/expression/kallisto` |
 | `align_reads` | the indexes and the per replicate results | every file, over the files in `results/expression/bowtie2_rsem` |
-| `busco` | the BUSCO output folder, whose per-gene folders it packs into two archives | `results/qc/busco`, which replaces the folder in the run folder |
+| `busco` | the BUSCO output folder, whose per-gene folders it packs into two archives | `results/qc/assembly/busco`, which replaces the folder in the run folder |
 
 Each of these logs names its work folder near the top. When the variable is not set in a job, for example on a computer without a cluster, the rule works in the run folder.
 

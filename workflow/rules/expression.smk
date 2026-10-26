@@ -139,8 +139,12 @@ rule kallisto:
     transcriptome="results/assembly/transcriptome.fasta",
     gene_trans_map="results/assembly/transcriptome.gene_trans_map"
   output:
-    isoform="results/expression/transcriptome_expression_isoform.tsv",
-    gene="results/expression/transcriptome_expression_gene.tsv",
+    tmm_isoform="results/expression/transcriptome_tmm_isoform.tsv",
+    tpm_isoform="results/expression/transcriptome_tpm_isoform.tsv",
+    counts_isoform="results/expression/transcriptome_counts_isoform.tsv",
+    tmm_gene="results/expression/transcriptome_tmm_gene.tsv",
+    tpm_gene="results/expression/transcriptome_tpm_gene.tsv",
+    counts_gene="results/expression/transcriptome_counts_gene.tsv",
     counts="results/expression/kallisto/kallisto.gene.counts.matrix"
   log:
     "logs/kallisto.log"
@@ -174,22 +178,20 @@ rule kallisto:
 
     # the matrix columns follow the order of the files on the command line, here the order of the samples file
     $TRINITY_HOME/util/abundance_estimates_to_matrix.pl --est_method kallisto --name_sample_by_basedir --gene_trans_map transcriptome.gene_trans_map $(awk '{{print $2 "/abundance.tsv"}}' samples_trimmed.txt) &>> "$LOG"
-    if [ -f kallisto.isoform.TMM.EXPR.matrix ]; then
-      cp -p kallisto.isoform.TMM.EXPR.matrix "$RUN/{output.isoform}" &>> "$LOG"
-    elif [ -f kallisto.isoform.TPM.not_cross_norm ]; then
-      cp -p kallisto.isoform.TPM.not_cross_norm "$RUN/{output.isoform}" &>> "$LOG"
-    else
-      echo "Neither kallisto.isoform.TMM.EXPR.matrix nor kallisto.isoform.TPM.not_cross_norm was produced" &>> "$LOG"
-      exit 1
-    fi
-    if [ -f kallisto.gene.TMM.EXPR.matrix ]; then
-      cp -p kallisto.gene.TMM.EXPR.matrix "$RUN/{output.gene}" &>> "$LOG"
-    elif [ -f kallisto.gene.TPM.not_cross_norm ]; then
-      cp -p kallisto.gene.TPM.not_cross_norm "$RUN/{output.gene}" &>> "$LOG"
-    else
-      echo "Neither kallisto.gene.TMM.EXPR.matrix nor kallisto.gene.TPM.not_cross_norm was produced" &>> "$LOG"
-      exit 1
-    fi
+    # TMM needs two or more libraries. check_samples stops a run with fewer before the first job, so a
+    # missing matrix here is an error.
+    for f in kallisto.{{isoform,gene}}.TMM.EXPR.matrix kallisto.{{isoform,gene}}.TPM.not_cross_norm kallisto.{{isoform,gene}}.counts.matrix; do
+      if [ ! -f $f ]; then
+        echo "$f was not produced" &>> "$LOG"
+        exit 1
+      fi
+    done
+    cp -p kallisto.isoform.TMM.EXPR.matrix "$RUN/{output.tmm_isoform}" &>> "$LOG"
+    cp -p kallisto.isoform.TPM.not_cross_norm "$RUN/{output.tpm_isoform}" &>> "$LOG"
+    cp -p kallisto.isoform.counts.matrix "$RUN/{output.counts_isoform}" &>> "$LOG"
+    cp -p kallisto.gene.TMM.EXPR.matrix "$RUN/{output.tmm_gene}" &>> "$LOG"
+    cp -p kallisto.gene.TPM.not_cross_norm "$RUN/{output.tpm_gene}" &>> "$LOG"
+    cp -p kallisto.gene.counts.matrix "$RUN/{output.counts_gene}" &>> "$LOG"
 
     abundance_finish
     """

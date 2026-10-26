@@ -81,7 +81,7 @@ The pin file of each env gives the exact version and build of every package. `re
    cond_B      cond_B_rep1 B_rep1_left.fq    B_rep1_right.fq
    cond_B      cond_B_rep2 B_rep2_left.fq    B_rep2_right.fq
    ~~~
-   The file names must not hold spaces. [tests/test_samples.txt](./tests/test_samples.txt) is an example.
+   The file needs two or more lines, because the TMM normalization of the expression needs two or more libraries. The file names must not hold spaces. [tests/test_samples.txt](./tests/test_samples.txt) is an example.
 
 8. Read `config.yaml` and set the keys for your data. Check at least `assembler`, `strand_specific`, `lineage`, `signalp` and `targetp`. See [Configuration](#configuration).
 
@@ -322,7 +322,7 @@ A run writes into `results/`, with one folder per step. Each step folder holds i
     qc/            fastqc/        before_trim/  after_trim/
                                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
                    multiqc/       before_trim/  after_trim/  (each holds multiqc_report.html and multiqc_fastqc.txt)
-                   assembly/      transcriptome_stats.txt  transcriptome_exN50.tsv  ExN50_plot.pdf
+                   assembly/      transcriptome_stats.txt  transcriptome_exN50_tmm.tsv  transcriptome_exN50_tmm.pdf
                                   busco/  busco_report.txt
     trimmomatic/   samples_trimmed.txt  samples_trimmed.yaml
                    trimmed_reads/ the trimmed reads
@@ -335,9 +335,9 @@ A run writes into `results/`, with one folder per step. Each step folder holds i
                    longorfs/      the TransDecoder.LongOrfs folder
     annotation/    {pfam,sprotblastp}_orfs.out  {rfam,sprotblastx}_fasta.out
                    {signalp,targetp,tmhmm}_pep.out
-                   transcriptome_annotated.fasta  transcriptome_annotated.pep  transcriptome_TPM_blast.csv
+                   transcriptome_annotated.fasta  transcriptome_annotated.pep
                    chunks/        the split inputs and the result of each chunk
-    expression/    transcriptome_expression_isoform.tsv  transcriptome_expression_gene.tsv
+    expression/    transcriptome_{tmm,tpm,counts}_{isoform,gene}.tsv
                    kallisto/      kallisto.{isoform,gene}.* matrices, the index, one folder per replicate
                    bowtie2_rsem/  the indexes, one folder per replicate, igv/ (only with align_reads)
                    edger/         the edgeR tests, one set of files for each pair of conditions
@@ -352,7 +352,9 @@ The files most analyses start from:
 | `results/transdecoder/transcriptome.pep` | the proteins of the ORF set that `transdecoder_orfs` picks |
 | `results/annotation/*.out` | the Pfam, Swiss-Prot, Rfam, SignalP, TargetP and TMHMM results |
 | `results/annotation/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
-| `results/expression/transcriptome_expression_isoform.tsv`, `_gene.tsv` | the TMM-normalized TPM of each transcript and gene, or the TPM when TMM is not possible |
+| `results/expression/transcriptome_tmm_{isoform,gene}.tsv` | the TPM of each transcript and gene, scaled across the libraries with TMM. ExN50 and the annotated FASTA headers read the isoform file |
+| `results/expression/transcriptome_tpm_{isoform,gene}.tsv` | the TPM of each transcript and gene in each library, with no scaling across the libraries |
+| `results/expression/transcriptome_counts_{isoform,gene}.tsv` | the estimated read counts. Trinity computes the gene counts from the gene TPM and the library size, after Soneson et al. 2016 |
 | `results/expression/kallisto/kallisto.{isoform,gene}.counts.matrix` | the estimated read counts |
 | `results/qc/assembly/busco/busco_report.txt` | the BUSCO score of the assembly |
 | `results/run_info.txt` | the host, the processor, the transXpress commit, the deployment methods, the images and the version of each tool |

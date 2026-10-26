@@ -325,7 +325,7 @@ A run writes into `results/`, with one folder per step. Each step folder holds i
                    busco/  busco_report.txt
                    transcriptome_stats.txt  transcriptome_exN50.tsv  ExN50_plot.pdf
     trimmomatic/   samples_trimmed.txt  samples_trimmed.yaml
-                   reads/         the trimmed reads
+                   trimmed_reads/ the trimmed reads
     assembly/      transcriptome.fasta  transcriptome.gene_trans_map
                    rnaspades/     the rnaSPAdes output folder
                    trinity/  trinity.Trinity.fasta  trinity.Trinity.fasta.gene_trans_map

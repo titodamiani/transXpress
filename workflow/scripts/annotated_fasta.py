@@ -47,7 +47,7 @@ def hmmer_hits(path, columns, id_column, name_column, evalue_column):
   return hits
 
 with open(log[0], "w") as log_handle:
-  # transcript ID to "<sample>=<TPM> <sample>=<TPM> ..."
+  # transcript ID to "<sample>=<TMM> <sample>=<TMM> ...", the TPM scaled across the libraries with TMM
   print("Loading expression values from", input["expression"], file=log_handle)
   expression_annotations = {}
   with open(input["expression"]) as input_handle:
@@ -100,7 +100,7 @@ with open(log[0], "w") as log_handle:
   with open(input["transcriptome"], "r") as input_fasta_handle, open(output["transcriptome_annotated"], "w") as output_fasta_handle:
     for record in Bio.SeqIO.parse(input_fasta_handle, "fasta"):
       transcript_id = record.id
-      record.description = "TPM: " + expression_annotations[transcript_id]
+      record.description = "TMM: " + expression_annotations[transcript_id]
       if transcript_id in blastx_annotations:
         record.description += "; blastx: " + blastx_annotations[transcript_id]
       if transcript_id in rfam_annotations:
@@ -114,7 +114,7 @@ with open(log[0], "w") as log_handle:
       transcript_id = re.sub("\\.p[0-9]+$", "", record.id)
       record.description = "transdecoder: " + re.search("ORF type:([^,]+,score=[^,]+)", record.description).group(1)
       for name, annotations, key in [
-          ("TPM", expression_annotations, transcript_id),
+          ("TMM", expression_annotations, transcript_id),
           ("blastp", blastp_annotations, record.id),
           ("pfam", pfam_annotations, record.id),
           ("rfam", rfam_annotations, transcript_id),
@@ -126,12 +126,3 @@ with open(log[0], "w") as log_handle:
       if config["annotated_fasta_prefix"]:
         record.id = config["annotated_fasta_prefix"] + "|" + record.id
       Bio.SeqIO.write(record, output_fasta_handle, "fasta")
-
-  print("Generating transcriptome_TPM_blast.csv table", file=log_handle)
-  with open(input["expression"], "r") as input_csv_handle, open(output["tpm_blast_table"], "w") as output_csv_handle:
-    csv_reader = csv.reader(input_csv_handle, delimiter="\t")
-    csv_writer = csv.writer(output_csv_handle, delimiter=",")
-    csv_columns = next(csv_reader)
-    csv_writer.writerow(["transcript"] + ["TPM(" + column + ")" for column in csv_columns[1:]] + ["blastx"])
-    for row in csv_reader:
-      csv_writer.writerow(row + [blastx_annotations.get(row[0], "")])

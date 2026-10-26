@@ -335,7 +335,7 @@ A run writes into `results/`, with one folder per step. Each step folder holds i
                    longorfs/      the TransDecoder.LongOrfs folder
     annotation/    {pfam,sprotblastp}_orfs.out  {rfam,sprotblastx}_fasta.out
                    {signalp,targetp,tmhmm}_pep.out
-                   transcriptome_annotated.fasta  transcriptome_annotated.pep  transcriptome_TPM_blast.csv
+                   transcriptome_annotated.fasta  transcriptome_annotated.pep
                    chunks/        the split inputs and the result of each chunk
     expression/    transcriptome_{tmm,tpm,counts}_{isoform,gene}.tsv
                    kallisto/      kallisto.{isoform,gene}.* matrices, the index, one folder per replicate

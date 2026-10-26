@@ -32,7 +32,6 @@ rule all:
     "results/qc/assembly/transcriptome_exN50_tmm.pdf",
     "results/annotation/transcriptome_annotated.fasta",
     "results/annotation/transcriptome_annotated.pep",
-    "results/annotation/transcriptome_TPM_blast.csv",
     "results/qc/assembly/busco",
     "results/qc/assembly/busco/busco_report.txt",
     "results/qc/fastqc/before_trim",

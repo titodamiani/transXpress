@@ -271,8 +271,7 @@ rule annotated_fasta:
     targetp_results=["results/annotation/targetp_pep.out"] if TARGETP_ORGANISM else []
   output:
     transcriptome_annotated="results/annotation/transcriptome_annotated.fasta",
-    proteome_annotated="results/annotation/transcriptome_annotated.pep",
-    tpm_blast_table="results/annotation/transcriptome_TPM_blast.csv"
+    proteome_annotated="results/annotation/transcriptome_annotated.pep"
   log:
     "logs/annotated_fasta.log"
   threads:

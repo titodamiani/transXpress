@@ -102,7 +102,7 @@ rule transdecoder_select:
   input:
     TRANSDECODER_ORFS_FILE
   output:
-    "results/transdecoder/transcriptome.pep"
+    "results/summary/transcriptome.pep"
   log:
     "logs/transdecoder_select.log"
   threads:

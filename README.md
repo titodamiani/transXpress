@@ -320,7 +320,7 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
   results/
     summary/       run_info.txt
                    transcriptome_annotated.fasta  transcriptome_annotated.pep
-                   transcriptome.fasta  transcriptome.gene_trans_map
+                   transcriptome.fasta  transcriptome.gene_trans_map  transcriptome.pep
     qc/            fastqc/        before_trim/  after_trim/
                                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
                    multiqc/       before_trim/  after_trim/  (each holds multiqc_report.html and multiqc_fastqc.txt)
@@ -330,7 +330,7 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
                    trimmed_reads/ the trimmed reads
     assembly/      rnaspades/     the rnaSPAdes output folder
                    trinity/  trinity.Trinity.fasta  trinity.Trinity.fasta.gene_trans_map
-    transdecoder/  transcriptome.orfs  transcriptome.pep
+    transdecoder/  transcriptome.orfs
                    transcriptome_all_orfs.{pep,cds,gff3,bed}
                    transcriptome_single_best_orf.{pep,cds,gff3,bed}
                    longorfs/      the TransDecoder.LongOrfs folder
@@ -349,7 +349,7 @@ The files most analyses start from:
 |---|---|
 | `results/summary/transcriptome.fasta` | the assembly |
 | `results/summary/transcriptome.gene_trans_map` | the gene of each transcript |
-| `results/transdecoder/transcriptome.pep` | the proteins of the ORF set that `transdecoder_orfs` picks |
+| `results/summary/transcriptome.pep` | the proteins of the ORF set that `transdecoder_orfs` picks |
 | `results/annotation/*.out` | the Pfam, Swiss-Prot, Rfam, SignalP, TargetP and TMHMM results |
 | `results/summary/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
 | `results/expression/transcriptome_tmm_{isoform,gene}.tsv` | the TPM of each transcript and gene, scaled across the libraries with TMM. ExN50 and the annotated FASTA headers read the isoform file |

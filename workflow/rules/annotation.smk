@@ -3,7 +3,7 @@
 ANNOTATION_SPLIT_INPUT = {
   "fasta": "results/summary/transcriptome.fasta",
   "orfs": "results/transdecoder/transcriptome.orfs",
-  "pep": "results/transdecoder/transcriptome.pep"}
+  "pep": "results/summary/transcriptome.pep"}
 
 wildcard_constraints:
   split="fasta|orfs|pep"
@@ -288,7 +288,7 @@ rule write_summaries:
   """
   input:
     transcriptome="results/summary/transcriptome.fasta",
-    proteome="results/transdecoder/transcriptome.pep",
+    proteome="results/summary/transcriptome.pep",
     expression=TMM_ISOFORM,
     blastx_results="results/annotation/sprotblastx_fasta.out",
     rfam_results="results/annotation/rfam_fasta.out",

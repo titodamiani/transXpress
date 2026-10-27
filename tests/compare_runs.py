@@ -2,7 +2,7 @@
 """Compare the results/ folders of two transXpress runs, file by file.
 
 Usage: compare_runs.py RUN_A RUN_B [--allowed tests/allowed_diffs.tsv] [--quiet]
-       compare_runs.py RUN_A RUN_B --sequences results/assembly/transcriptome.fasta
+       compare_runs.py RUN_A RUN_B --sequences results/summary/transcriptome.fasta
 
 Every file under RUN_A/results must exist in RUN_B/results, and the other way round.
 Two files match when their bytes match. A gzip file matches when its decompressed bytes match.

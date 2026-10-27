@@ -116,10 +116,10 @@ rule trinity_stats:
   (number of transcripts, genes, GC content, EXN50).
   """
   input:
-    transcriptome="results/assembly/transcriptome.fasta",
+    transcriptome="results/summary/transcriptome.fasta",
     expression=TMM_ISOFORM
   output:
-    stats="results/qc/assembly/transcriptome_stats.txt",
+    stats="results/summary/transcriptome_stats.txt",
     exN50="results/qc/assembly/transcriptome_exN50_tmm.tsv",
     exN50plot="results/qc/assembly/transcriptome_exN50_tmm.pdf"
   log:
@@ -157,10 +157,10 @@ rule busco:
   Runs BUSCO to assess the completeness of the transcriptome.
   """
   input:
-    transcriptome="results/assembly/transcriptome.fasta"
+    transcriptome="results/summary/transcriptome.fasta"
   output:
     out_directory=directory("results/qc/assembly/busco"),
-    report="results/qc/assembly/busco/busco_report.txt"
+    report="results/summary/busco_report.txt"
   log:
     "logs/busco.log"
   conda:

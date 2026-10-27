@@ -6,8 +6,8 @@ rule align_reads:
   """
   input:
     samples="results/trimmomatic/samples_trimmed.txt",
-    transcriptome="results/assembly/transcriptome.fasta",
-    gene_trans_map="results/assembly/transcriptome.gene_trans_map"
+    transcriptome="results/summary/transcriptome.fasta",
+    gene_trans_map="results/summary/transcriptome.gene_trans_map"
   output:
     "results/expression/bowtie2_rsem/transcriptome.fasta.bowtie2.ok"
   log:
@@ -136,15 +136,15 @@ rule kallisto:
   """
   input:
     samples="results/trimmomatic/samples_trimmed.txt",
-    transcriptome="results/assembly/transcriptome.fasta",
-    gene_trans_map="results/assembly/transcriptome.gene_trans_map"
+    transcriptome="results/summary/transcriptome.fasta",
+    gene_trans_map="results/summary/transcriptome.gene_trans_map"
   output:
-    tmm_isoform="results/expression/transcriptome_tmm_isoform.tsv",
-    tpm_isoform="results/expression/transcriptome_tpm_isoform.tsv",
-    counts_isoform="results/expression/transcriptome_counts_isoform.tsv",
-    tmm_gene="results/expression/transcriptome_tmm_gene.tsv",
-    tpm_gene="results/expression/transcriptome_tpm_gene.tsv",
-    counts_gene="results/expression/transcriptome_counts_gene.tsv",
+    tmm_isoform="results/summary/transcriptome_tmm_isoform.tsv",
+    tpm_isoform="results/summary/transcriptome_tpm_isoform.tsv",
+    counts_isoform="results/summary/transcriptome_counts_isoform.tsv",
+    tmm_gene="results/summary/transcriptome_tmm_gene.tsv",
+    tpm_gene="results/summary/transcriptome_tpm_gene.tsv",
+    counts_gene="results/summary/transcriptome_counts_gene.tsv",
     counts="results/expression/kallisto/kallisto.gene.counts.matrix"
   log:
     "logs/kallisto.log"

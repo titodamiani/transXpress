@@ -320,6 +320,7 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
   results/
     summary/       run_info.txt
                    transcriptome_annotated.fasta  transcriptome_annotated.pep
+                   transcriptome.fasta  transcriptome.gene_trans_map
     qc/            fastqc/        before_trim/  after_trim/
                                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
                    multiqc/       before_trim/  after_trim/  (each holds multiqc_report.html and multiqc_fastqc.txt)
@@ -327,8 +328,7 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
                                   busco/  busco_report.txt
     trimmomatic/   samples_trimmed.txt  samples_trimmed.yaml
                    trimmed_reads/ the trimmed reads
-    assembly/      transcriptome.fasta  transcriptome.gene_trans_map
-                   rnaspades/     the rnaSPAdes output folder
+    assembly/      rnaspades/     the rnaSPAdes output folder
                    trinity/  trinity.Trinity.fasta  trinity.Trinity.fasta.gene_trans_map
     transdecoder/  transcriptome.orfs  transcriptome.pep
                    transcriptome_all_orfs.{pep,cds,gff3,bed}
@@ -347,8 +347,8 @@ The files most analyses start from:
 
 | File | Content |
 |---|---|
-| `results/assembly/transcriptome.fasta` | the assembly |
-| `results/assembly/transcriptome.gene_trans_map` | the gene of each transcript |
+| `results/summary/transcriptome.fasta` | the assembly |
+| `results/summary/transcriptome.gene_trans_map` | the gene of each transcript |
 | `results/transdecoder/transcriptome.pep` | the proteins of the ORF set that `transdecoder_orfs` picks |
 | `results/annotation/*.out` | the Pfam, Swiss-Prot, Rfam, SignalP, TargetP and TMHMM results |
 | `results/summary/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
@@ -449,7 +449,7 @@ How `compare_runs.py` compares:
 * Before the comparison, it replaces three kinds of paths in the content, because many tools write the folder they ran in: the run folder becomes `@RUN@`, the node-local work folder of a job becomes `@SCRATCH@`, and the folder of a conda env (on the host or in the main image) becomes `@ENV@`.
 * A file that differs passes only when a line of `tests/allowed_diffs.tsv` names it. Each line has three tab-separated fields: a path pattern, a mode and the reason. The mode `skip` lets the file differ in any way. The mode `strip:REGEX` compares the file without the lines that REGEX matches.
 * The exit code is 0 when every file matches or is allowed to differ, and 1 otherwise.
-* `--sequences results/assembly/transcriptome.fasta` compares only the sorted sequences of that file, without the headers.
+* `--sequences results/summary/transcriptome.fasta` compares only the sorted sequences of that file, without the headers.
 
 ### The CI workflow
 
@@ -493,7 +493,7 @@ snakemake --profile /path/to/transXpress/profiles/slurm align_reads
 snakemake --profile /path/to/transXpress/profiles/slurm IGV
 ~~~~
 
-Then load your transcriptome file to IGV: Genomes -> Load Genome from File -> select the file *results/assembly/transcriptome.fasta*
+Then load your transcriptome file to IGV: Genomes -> Load Genome from File -> select the file *results/summary/transcriptome.fasta*
 
 Your sorted .bam files will be in the igv folder:
 ~~~~

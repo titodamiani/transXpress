@@ -3,7 +3,7 @@ rule transdecoder_longorfs:
   Runs first stage of Transdecoder extracting the long open reading frames.
   """
   input:
-    transcriptome="results/assembly/transcriptome.fasta",
+    transcriptome="results/summary/transcriptome.fasta",
   output:
     orfs="results/transdecoder/transcriptome.orfs"
   log:
@@ -51,7 +51,7 @@ rule transdecoder_predict:
   among tied ORFs in each run.
   """
   input:
-    transcriptome="results/assembly/transcriptome.fasta",
+    transcriptome="results/summary/transcriptome.fasta",
     orfs="results/transdecoder/transcriptome.orfs",
     pfam="results/annotation/pfam_orfs.out",
     blastp="results/annotation/sprotblastp_orfs.out"

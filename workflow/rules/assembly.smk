@@ -131,8 +131,8 @@ rule transcriptome_copy:
   input:
     unpack(transcriptome_copy_input)
   output:
-    transcriptome="results/assembly/transcriptome.fasta",
-    gene_trans_map="results/assembly/transcriptome.gene_trans_map"
+    transcriptome="results/summary/transcriptome.fasta",
+    gene_trans_map="results/summary/transcriptome.gene_trans_map"
   log:
     "logs/transcriptome_copy.log"
   threads:

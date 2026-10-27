@@ -24,7 +24,7 @@ rule all:
   """
   input:
     "results/trimmomatic/samples_trimmed.txt",
-    "results/assembly/transcriptome.fasta",
+    "results/summary/transcriptome.fasta",
     "results/transdecoder/transcriptome.pep",
     expand("results/transdecoder/transcriptome_all_orfs.{ext}", ext=["pep", "cds", "gff3", "bed"]),
     expand("results/transdecoder/transcriptome_single_best_orf.{ext}", ext=["pep", "cds", "gff3", "bed"]),

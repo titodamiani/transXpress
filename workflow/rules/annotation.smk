@@ -1,7 +1,7 @@
 # The three sequence sets that the annotation tools read: the transcripts (fasta), the long ORFs (orfs)
 # and the proteins (pep). The extension of a chunk file is the name of its set.
 ANNOTATION_SPLIT_INPUT = {
-  "fasta": "results/assembly/transcriptome.fasta",
+  "fasta": "results/summary/transcriptome.fasta",
   "orfs": "results/transdecoder/transcriptome.orfs",
   "pep": "results/transdecoder/transcriptome.pep"}
 
@@ -287,7 +287,7 @@ rule write_summaries:
   .fasta/.pep transcriptome files.
   """
   input:
-    transcriptome="results/assembly/transcriptome.fasta",
+    transcriptome="results/summary/transcriptome.fasta",
     proteome="results/transdecoder/transcriptome.pep",
     expression=TMM_ISOFORM,
     blastx_results="results/annotation/sprotblastx_fasta.out",

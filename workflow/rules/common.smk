@@ -34,7 +34,7 @@ TRANSDECODER_ORFS_FILE = {"all": "results/transdecoder/transcriptome_all_orfs.pe
 
 # The isoform expression matrix that ExN50 and the annotated FASTA headers read: the TPM of each transcript,
 # scaled across the libraries with TMM. The ExN50 page of the Trinity wiki uses the TMM matrix.
-TMM_ISOFORM = "results/summary/transcriptome_tmm_isoform.tsv"
+TMM_ISOFORM = "results/summary/expr_tmm_isoform.tsv"
 
 # The rnaSPAdes transcript set that becomes transcriptome.fasta. rnaSPAdes always writes all three.
 RNASPADES_FILTER = config["rnaspades_filter"]

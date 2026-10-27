@@ -321,7 +321,7 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
     summary/       run_info.txt
                    transcriptome_annotated.fasta  transcriptome_annotated.pep
                    transcriptome.fasta  transcriptome.gene_trans_map  transcriptome.pep
-                   transcriptome_{tmm,tpm,counts}_{isoform,gene}.tsv
+                   expr_{tmm,tpm,counts}_{isoform,gene}.tsv
                    transcriptome_stats.txt  busco_report.txt
     qc/            fastqc/        before_trim/  after_trim/
                                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
@@ -353,9 +353,9 @@ The files most analyses start from:
 | `results/summary/transcriptome.pep` | the proteins of the ORF set that `transdecoder_orfs` picks |
 | `results/annotation/*.out` | the Pfam, Swiss-Prot, Rfam, SignalP, TargetP and TMHMM results |
 | `results/summary/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
-| `results/summary/transcriptome_tmm_{isoform,gene}.tsv` | the TPM of each transcript and gene, scaled across the libraries with TMM. ExN50 and the annotated FASTA headers read the isoform file |
-| `results/summary/transcriptome_tpm_{isoform,gene}.tsv` | the TPM of each transcript and gene in each library, with no scaling across the libraries |
-| `results/summary/transcriptome_counts_{isoform,gene}.tsv` | the estimated read counts. Trinity computes the gene counts from the gene TPM and the library size, after Soneson et al. 2016 |
+| `results/summary/expr_tmm_{isoform,gene}.tsv` | the TPM of each transcript and gene, scaled across the libraries with TMM. ExN50 and the annotated FASTA headers read the isoform file |
+| `results/summary/expr_tpm_{isoform,gene}.tsv` | the TPM of each transcript and gene in each library, with no scaling across the libraries |
+| `results/summary/expr_counts_{isoform,gene}.tsv` | the estimated read counts. Trinity computes the gene counts from the gene TPM and the library size, after Soneson et al. 2016 |
 | `results/expression/kallisto/kallisto.{isoform,gene}.counts.matrix` | the estimated read counts |
 | `results/summary/busco_report.txt` | the BUSCO score of the assembly |
 | `results/summary/run_info.txt` | the host, the processor, the transXpress commit, the deployment methods, the images and the version of each tool |

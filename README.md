@@ -319,6 +319,7 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
   resources/     db/  busco_downloads/
   results/
     summary/       run_info.txt
+                   transcriptome_annotated.fasta  transcriptome_annotated.pep
     qc/            fastqc/        before_trim/  after_trim/
                                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
                    multiqc/       before_trim/  after_trim/  (each holds multiqc_report.html and multiqc_fastqc.txt)
@@ -335,7 +336,6 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
                    longorfs/      the TransDecoder.LongOrfs folder
     annotation/    {pfam,sprotblastp}_orfs.out  {rfam,sprotblastx}_fasta.out
                    {signalp,targetp,tmhmm}_pep.out
-                   transcriptome_annotated.fasta  transcriptome_annotated.pep
                    chunks/        the split inputs and the result of each chunk
     expression/    transcriptome_{tmm,tpm,counts}_{isoform,gene}.tsv
                    kallisto/      kallisto.{isoform,gene}.* matrices, the index, one folder per replicate
@@ -351,7 +351,7 @@ The files most analyses start from:
 | `results/assembly/transcriptome.gene_trans_map` | the gene of each transcript |
 | `results/transdecoder/transcriptome.pep` | the proteins of the ORF set that `transdecoder_orfs` picks |
 | `results/annotation/*.out` | the Pfam, Swiss-Prot, Rfam, SignalP, TargetP and TMHMM results |
-| `results/annotation/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
+| `results/summary/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
 | `results/expression/transcriptome_tmm_{isoform,gene}.tsv` | the TPM of each transcript and gene, scaled across the libraries with TMM. ExN50 and the annotated FASTA headers read the isoform file |
 | `results/expression/transcriptome_tpm_{isoform,gene}.tsv` | the TPM of each transcript and gene in each library, with no scaling across the libraries |
 | `results/expression/transcriptome_counts_{isoform,gene}.tsv` | the estimated read counts. Trinity computes the gene counts from the gene TPM and the library size, after Soneson et al. 2016 |

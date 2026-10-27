@@ -281,7 +281,7 @@ rule targetp_parallel:
     """
 
 
-rule annotated_fasta:
+rule write_summaries:
   """
   Puts annotations in the headers of transcripts/proteins in the
   .fasta/.pep transcriptome files.
@@ -298,14 +298,14 @@ rule annotated_fasta:
     signalp_results=["results/annotation/signalp_pep.out"] if SIGNALP_ORGANISM else [],
     targetp_results=["results/annotation/targetp_pep.out"] if TARGETP_ORGANISM else []
   output:
-    transcriptome_annotated="results/annotation/transcriptome_annotated.fasta",
-    proteome_annotated="results/annotation/transcriptome_annotated.pep"
+    transcriptome_annotated="results/summary/transcriptome_annotated.fasta",
+    proteome_annotated="results/summary/transcriptome_annotated.pep"
   log:
-    "logs/annotated_fasta.log"
+    "logs/write_summaries.log"
   threads:
     1
   resources:
     mem_mb=4096,
     runtime="4h"
   script:
-    "../scripts/annotated_fasta.py"
+    "../scripts/write_summaries.py"

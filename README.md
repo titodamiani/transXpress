@@ -310,7 +310,7 @@ snakemake --profile /path/to/transXpress/profiles/slurm results/trimmomatic/samp
 
 ## Output layout
 
-A run writes into `results/`, with one folder per step. The folder `summary/` holds the files that people and later pipelines read, whichever rule writes them. Each step folder holds its answer files at the top and its working files in a subfolder. The rule logs go to `logs/`, and the databases of the default `db_dir` go to `resources/`.
+A run writes into `results/`, with one folder per step. The folder `summary/` holds the files that people and later pipelines read, whichever rule writes them. Each step folder holds the rest of its result files at the top and its working files in a subfolder. The rule logs go to `logs/`, and the databases of the default `db_dir` go to `resources/`.
 
 ~~~
 <run folder>/

@@ -28,8 +28,8 @@ rerun-incomplete: true
 default-resources:
   # One CPU generation (AMD EPYC 9654), so two runs give the same assembly
   constraint: "'gen-d'"
-  # d035 kills every job, and on d001 $SCRATCH is in RAM
-  slurm_extra: "'--exclude=d001,d035'"
+  # On d001 $SCRATCH is in RAM
+  slurm_extra: "'--exclude=d001'"
 
 # A --config on the command line replaces this list, so add scratch=SCRATCH to it.
 config:

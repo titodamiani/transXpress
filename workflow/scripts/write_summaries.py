@@ -107,22 +107,31 @@ with open(log[0], "w") as log_handle:
         record.description += "; rfam: " + rfam_annotations[transcript_id]
       Bio.SeqIO.write(record, output_fasta_handle, "fasta")
 
-  print("Annotating FASTA file", input["proteome"], "to", output["proteome_annotated"], file=log_handle)
-  with open(input["proteome"], "r") as input_fasta_handle, open(output["proteome_annotated"], "w") as output_fasta_handle:
-    for record in Bio.SeqIO.parse(input_fasta_handle, "fasta"):
-      # a TransDecoder protein ID is the transcript ID with .p<N> added
-      transcript_id = re.sub("\\.p[0-9]+$", "", record.id)
-      record.description = "transdecoder: " + re.search("ORF type:([^,]+,score=[^,]+)", record.description).group(1)
-      for name, annotations, key in [
-          ("TMM", expression_annotations, transcript_id),
-          ("blastp", blastp_annotations, record.id),
-          ("pfam", pfam_annotations, record.id),
-          ("rfam", rfam_annotations, transcript_id),
-          ("tmhmm", tmhmm_annotations, record.id),
-          ("signalp", signalp_annotations, record.id),
-          ("targetp", targetp_annotations, record.id)]:
-        if key in annotations:
-          record.description += "; %s: %s" % (name, annotations[key])
-      if config["annotated_fasta_prefix"]:
-        record.id = config["annotated_fasta_prefix"] + "|" + record.id
-      Bio.SeqIO.write(record, output_fasta_handle, "fasta")
+  for orf_set in ["all_orfs", "single_best_orf"]:
+    print("Annotating FASTA file", input["proteome_" + orf_set], "to", output["proteome_%s_annotated" % orf_set], file=log_handle)
+    no_pfam = no_blastp = 0
+    with open(input["proteome_" + orf_set], "r") as input_fasta_handle, open(output["proteome_%s_annotated" % orf_set], "w") as output_fasta_handle:
+      for record in Bio.SeqIO.parse(input_fasta_handle, "fasta"):
+        # a TransDecoder protein ID is the transcript ID with .p<N> added
+        transcript_id = re.sub("\\.p[0-9]+$", "", record.id)
+        # the three tools that run on the proteins have a result for each protein
+        assert record.id in tmhmm_annotations, "%s has no tmhmm result" % record.id
+        assert record.id in signalp_annotations or not input["signalp_results"], "%s has no signalp result" % record.id
+        assert record.id in targetp_annotations or not input["targetp_results"], "%s has no targetp result" % record.id
+        no_pfam += record.id not in pfam_annotations
+        no_blastp += record.id not in blastp_annotations
+        record.description = "transdecoder: " + re.search("ORF type:([^,]+,score=[^,]+)", record.description).group(1)
+        for name, annotations, key in [
+            ("TMM", expression_annotations, transcript_id),
+            ("blastp", blastp_annotations, record.id),
+            ("pfam", pfam_annotations, record.id),
+            ("rfam", rfam_annotations, transcript_id),
+            ("tmhmm", tmhmm_annotations, record.id),
+            ("signalp", signalp_annotations, record.id),
+            ("targetp", targetp_annotations, record.id)]:
+          if key in annotations:
+            record.description += "; %s: %s" % (name, annotations[key])
+        if config["annotated_fasta_prefix"]:
+          record.id = config["annotated_fasta_prefix"] + "|" + record.id
+        Bio.SeqIO.write(record, output_fasta_handle, "fasta")
+    print(orf_set, "proteins without a pfam hit:", no_pfam, "and without a blastp hit:", no_blastp, file=log_handle)

@@ -69,10 +69,6 @@ properties:
     pattern: '^[0-9]{4}_[0-9]{2}$'
     default: "2026_03"
     description: Write it in quotes, because YAML reads 2026_03 as the number 202603.
-  transdecoder_orfs:
-    type: string
-    enum: [all, single_best]
-    default: all
   annotation_chunk_fasta:
     type: integer
     minimum: 1

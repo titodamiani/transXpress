@@ -1,16 +1,16 @@
 # The three sequence sets that the annotation tools read: the transcripts (fasta), the long ORFs (orfs)
-# and the proteins (pep). The extension of a chunk file is the name of its set.
+# and the proteins of both ORF sets (pep). The extension of a chunk file is the name of its set.
 ANNOTATION_SPLIT_INPUT = {
   "fasta": "results/summary/transcriptome.fasta",
   "orfs": "results/transdecoder/transcriptome.orfs",
-  "pep": "results/summary/transcriptome.pep"}
+  "pep": "results/transdecoder/transcriptome_both_sets.pep"}
 
 wildcard_constraints:
   split="fasta|orfs|pep"
 
 checkpoint fasta_split:
   """
-  Splits the transcriptome.fasta, the transcriptome.orfs or the transcriptome.pep into smaller files so
+  Splits the transcriptome.fasta, the transcriptome.orfs or the transcriptome_both_sets.pep into smaller files so
   they can be processed (annotated) in parallel.
   """
   input:
@@ -283,12 +283,13 @@ rule targetp_parallel:
 
 rule write_summaries:
   """
-  Puts annotations in the headers of transcripts/proteins in the
-  .fasta/.pep transcriptome files.
+  Puts annotations in the headers of the transcripts and of the proteins of
+  each ORF set.
   """
   input:
     transcriptome="results/summary/transcriptome.fasta",
-    proteome="results/summary/transcriptome.pep",
+    proteome_all_orfs="results/transdecoder/transcriptome_all_orfs.pep",
+    proteome_single_best_orf="results/transdecoder/transcriptome_single_best_orf.pep",
     expression=TMM_ISOFORM,
     blastx_results="results/annotation/sprotblastx_fasta.out",
     rfam_results="results/annotation/rfam_fasta.out",
@@ -299,7 +300,8 @@ rule write_summaries:
     targetp_results=["results/annotation/targetp_pep.out"] if TARGETP_ORGANISM else []
   output:
     transcriptome_annotated="results/summary/transcriptome_annotated.fasta",
-    proteome_annotated="results/summary/transcriptome_annotated.pep"
+    proteome_all_orfs_annotated="results/summary/transcriptome_all_orfs_annotated.pep",
+    proteome_single_best_orf_annotated="results/summary/transcriptome_single_best_orf_annotated.pep"
   log:
     "logs/write_summaries.log"
   threads:

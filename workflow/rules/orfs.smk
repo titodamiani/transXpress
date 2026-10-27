@@ -94,17 +94,16 @@ rule transdecoder_predict:
     """
 
 
-rule transdecoder_select:
+rule summary_peps:
   """
-  Copies the ORF set that transdecoder_orfs in config.yaml names to
-  transcriptome.pep, which the downstream rules read.
+  Copies the proteins of both ORF sets to the summary folder.
   """
   input:
-    TRANSDECODER_ORFS_FILE
+    expand("results/transdecoder/transcriptome_{orf_set}.pep", orf_set=["all_orfs", "single_best_orf"])
   output:
-    "results/summary/transcriptome.pep"
+    expand("results/summary/transcriptome_{orf_set}.pep", orf_set=["all_orfs", "single_best_orf"])
   log:
-    "logs/transdecoder_select.log"
+    "logs/summary_peps.log"
   threads:
     1
   resources:
@@ -112,5 +111,28 @@ rule transdecoder_select:
     runtime="4h"
   shell:
     """
-    cp -p {input} {output} &> {log}
+    cp -p {input[0]} {output[0]} &> {log}
+    cp -p {input[1]} {output[1]} &>> {log}
     """
+
+
+rule orf_sets_pep:
+  """
+  Joins the proteins of both ORF sets into one file, so that TMHMM, SignalP and TargetP
+  read each protein once. The single_best_orf set holds proteins that the all_orfs set
+  lacks. A protein ID that has two different sequences in the two sets stops the rule.
+  """
+  input:
+    all_orfs="results/transdecoder/transcriptome_all_orfs.pep",
+    single_best_orf="results/transdecoder/transcriptome_single_best_orf.pep"
+  output:
+    "results/transdecoder/transcriptome_both_sets.pep"
+  log:
+    "logs/orf_sets_pep.log"
+  threads:
+    1
+  resources:
+    mem_mb=2048,
+    runtime="4h"
+  script:
+    "../scripts/orf_sets_pep.py"

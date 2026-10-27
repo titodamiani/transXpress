@@ -51,9 +51,6 @@ e_value_threshold: "1e-6"
 # Dispersion value for edgeR differential expression analysis 
 dispersion: "0.1"
 
-# ORF set that transcriptome.pep holds: "all" or "single_best". See config.yaml.
-transdecoder_orfs: "all"
-
 # The number of sequences in each annotation chunk. See config.yaml.
 annotation_chunk_fasta: 1000
 annotation_chunk_orfs: 5000

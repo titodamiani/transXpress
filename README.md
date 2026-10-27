@@ -40,7 +40,7 @@ transXpress needs conda (Miniforge3) and Snakemake. Snakemake installs every too
 | `tmhmm.yaml` | tmhmm.py 1.2.1 |
 | `signalp.yaml`, `targetp.yaml` | the base of the named conda envs `signalp` and `targetp`. [SignalP 6.0](https://services.healthtech.dtu.dk/services/SignalP-6.0/) and [TargetP 2.0](https://services.healthtech.dtu.dk/services/TargetP-2.0/) have a DTU licence, so you install them yourself (see [SignalP and TargetP](#signalp-and-targetp)) |
 
-The pin file of each env gives the exact version and build of every package. `results/run_info.txt` lists them for each run.
+The pin file of each env gives the exact version and build of every package. `results/summary/run_info.txt` lists them for each run.
 
 ## Installation
 
@@ -179,7 +179,7 @@ An image path needs `apptainer` in the `software-deployment-method` of the profi
    targetp_container: "/path/to/images/targetp.sif"
    ~~~
 
-Keep the images private. `results/run_info.txt` records the path, the size, the SIF ID and the build time of each image.
+Keep the images private. `results/summary/run_info.txt` records the path, the size, the SIF ID and the build time of each image.
 
 ### The named conda envs
 
@@ -310,7 +310,7 @@ snakemake --profile /path/to/transXpress/profiles/slurm results/trimmomatic/samp
 
 ## Output layout
 
-A run writes into `results/`, with one folder per step. Each step folder holds its answer files at the top and its working files in a subfolder. The rule logs go to `logs/`, and the databases of the default `db_dir` go to `resources/`.
+A run writes into `results/`, with one folder per step. The folder `summary/` holds the files that people and later pipelines read, whichever rule writes them. Each step folder holds its answer files at the top and its working files in a subfolder. The rule logs go to `logs/`, and the databases of the default `db_dir` go to `resources/`.
 
 ~~~
 <run folder>/
@@ -318,7 +318,7 @@ A run writes into `results/`, with one folder per step. Each step folder holds i
   logs/          <rule>.log, and <rule>/<wildcard>.log for a rule with many jobs
   resources/     db/  busco_downloads/
   results/
-    run_info.txt
+    summary/       run_info.txt
     qc/            fastqc/        before_trim/  after_trim/
                                   WARNING_fastqc_before_trim_overview.txt  FastQC_comparison_after_trim.txt
                    multiqc/       before_trim/  after_trim/  (each holds multiqc_report.html and multiqc_fastqc.txt)
@@ -357,7 +357,7 @@ The files most analyses start from:
 | `results/expression/transcriptome_counts_{isoform,gene}.tsv` | the estimated read counts. Trinity computes the gene counts from the gene TPM and the library size, after Soneson et al. 2016 |
 | `results/expression/kallisto/kallisto.{isoform,gene}.counts.matrix` | the estimated read counts |
 | `results/qc/assembly/busco/busco_report.txt` | the BUSCO score of the assembly |
-| `results/run_info.txt` | the host, the processor, the transXpress commit, the deployment methods, the images and the version of each tool |
+| `results/summary/run_info.txt` | the host, the processor, the transXpress commit, the deployment methods, the images and the version of each tool |
 
 Two rules delete files, and neither runs unless you name it:
 
@@ -375,7 +375,7 @@ snakemake --profile /path/to/transXpress/profiles/local delete_intermediates
 * Swiss-Prot, Pfam and Rfam have fixed releases, set in `config.yaml`. See [Annotation databases](#annotation-databases).
 * With the default `db_dir: "resources/db"`, BUSCO downloads the latest dataset of its lineage, so BUSCO scores can differ between runs months apart. A shared `db_dir` keeps one lineage dataset for every run.
 * The pipeline reads and writes the paths in [Output layout](#output-layout). A run folder that holds its files at other paths runs every step again, so start each run in its own folder.
-* The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `results/run_info.txt` records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades` and `trinity` name the machine each one ran on.
+* The assembly depends on the assembler version, the thread count and the processor. rnaSPAdes repeats an assembly at a fixed thread count, and the SPAdes documentation gives no promise across processor types. The same reads on a different CPU generation, or with a different value of `rnaspades_threads`, can give a different set of transcripts. Two runs to be compared need the same version, the same thread count and the same hardware. `results/summary/run_info.txt` records the processor, the host, the memory, the operating system and the transXpress commit, and the logs of `trimmomatic_parallel`, `rnaspades` and `trinity` name the machine each one ran on.
 * TransDecoder and Trinity each have a Perl script that writes records in Perl hash order, which changes in each run. The TransDecoder rules, `kallisto` and `trinity_stats` set `PERL_HASH_SEED=0`, so two runs write the same records in the same order. Upstream reports: [TransDecoder/TransDecoder#212](https://github.com/TransDecoder/TransDecoder/issues/212), [trinityrnaseq/trinityrnaseq#1478](https://github.com/trinityrnaseq/trinityrnaseq/issues/1478).
 * Trinity does not repeat an assembly: two runs on the same reads give slightly different transcripts. On one piper09 library, two runs shared 113127 of about 113370 transcripts. `trinity_parameters: "--seqType fq --inchworm_cpu 1"` gives identical runs on the test data, but not on real data. For a repeatable assembly, use rnaSPAdes. Details in [issue 22](https://github.com/titodamiani/transXpress/issues/22).
 * Trinity writes the records of `trinity.Trinity.fasta` in another order in each run. `transcriptome_copy` sorts them by name (`seqkit sort --natural-order`) into `transcriptome.fasta` and writes the gene map in the same order.

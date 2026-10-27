@@ -43,7 +43,7 @@ rule all:
     "results/qc/fastqc/WARNING_fastqc_before_trim_overview.txt",
     "results/qc/fastqc/FastQC_comparison_after_trim.txt",
     "results/expression/edger",
-    "results/run_info.txt"
+    "results/summary/run_info.txt"
 
 # Every job gets its temporary folder (TMPDIR, TMP and TEMP) from job_tmpdir, so the temporary files of
 # the tools go to the node's local disk when the scratch key is set. Snakemake evaluates the tmpdir

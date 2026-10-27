@@ -173,7 +173,7 @@ jobs:
           # outside the run folder
           snakemake --profile ../profiles/local --software-deployment-method conda apptainer \
             --apptainer-prefix "$GITHUB_WORKSPACE/images" --apptainer-args "--bind $GITHUB_WORKSPACE" --cores 4
-          grep -E '^(deployment|image|image_file)\b' results/run_info.txt
+          grep -E '^(deployment|image|image_file)\b' results/summary/run_info.txt
       - name: Compare the two runs
         shell: bash -el {0}
         run: python tests/compare_runs.py t1-conda t1-image

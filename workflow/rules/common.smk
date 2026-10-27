@@ -254,7 +254,7 @@ rule run_info:
   can be compared against this one.
   """
   output:
-    "results/run_info.txt"
+    "results/summary/run_info.txt"
   params:
     deployment=DEPLOYMENT,
     # the rule envs come from the main image only when apptainer is a deployment method

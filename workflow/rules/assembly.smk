@@ -127,6 +127,11 @@ rule transcriptome_copy:
   same transcripts in another order in each run, so the copy of a Trinity
   assembly holds them sorted by name in natural order (TRINITY_DN2 before
   TRINITY_DN10), and its gene map follows that order.
+
+  This is its own rule, and not the end of rnaspades or trinity, for two reasons.
+  A rule that fails has its outputs deleted by Snakemake, so a failed name check
+  here must not delete an assembly that took hours. And a change of
+  rnaspades_filter reruns only this rule, not the assembly.
   """
   input:
     unpack(transcriptome_copy_input)

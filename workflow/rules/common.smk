@@ -28,13 +28,9 @@ PFAM_RELEASE = config["pfam_release"]
 RFAM_RELEASE = config["rfam_release"]
 SPROT_RELEASE = config["sprot_release"]
 
-# The ORF set that transcriptome.pep holds and the downstream rules read. Both sets are always saved.
-TRANSDECODER_ORFS = config["transdecoder_orfs"]
-TRANSDECODER_ORFS_FILE = {"all": "results/transdecoder/transcriptome_all_orfs.pep", "single_best": "results/transdecoder/transcriptome_single_best_orf.pep"}[TRANSDECODER_ORFS]
-
 # The isoform expression matrix that ExN50 and the annotated FASTA headers read: the TPM of each transcript,
 # scaled across the libraries with TMM. The ExN50 page of the Trinity wiki uses the TMM matrix.
-TMM_ISOFORM = "results/summary/transcriptome_tmm_isoform.tsv"
+TMM_ISOFORM = "results/summary/expr_tmm_isoform.tsv"
 
 # The rnaSPAdes transcript set that becomes transcriptome.fasta. rnaSPAdes always writes all three.
 RNASPADES_FILTER = config["rnaspades_filter"]
@@ -187,7 +183,7 @@ def parallel_annotation_tasks(wildcards):
   return expand("results/annotation/chunks/{task}/{index}.out", index=job_ids, task=wildcards["task"])
 
 # These rules run in the main job, not as cluster jobs
-localrules: all, clean, delete_intermediates, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, transcriptome_copy, transdecoder_select, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
+localrules: all, clean, delete_intermediates, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, transcriptome_copy, summary_peps, orf_sets_pep, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
 # A rule with a wildcard keeps its logs in logs/<rule>/, and the wildcard is only in the file name.
 # The cluster writes its own log next to the rule log before the job starts, and not every cluster

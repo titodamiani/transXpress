@@ -139,12 +139,12 @@ rule kallisto:
     transcriptome="results/summary/transcriptome.fasta",
     gene_trans_map="results/summary/transcriptome.gene_trans_map"
   output:
-    tmm_isoform="results/summary/transcriptome_tmm_isoform.tsv",
-    tpm_isoform="results/summary/transcriptome_tpm_isoform.tsv",
-    counts_isoform="results/summary/transcriptome_counts_isoform.tsv",
-    tmm_gene="results/summary/transcriptome_tmm_gene.tsv",
-    tpm_gene="results/summary/transcriptome_tpm_gene.tsv",
-    counts_gene="results/summary/transcriptome_counts_gene.tsv",
+    tmm_isoform="results/summary/expr_tmm_isoform.tsv",
+    tpm_isoform="results/summary/expr_tpm_isoform.tsv",
+    counts_isoform="results/summary/expr_counts_isoform.tsv",
+    tmm_gene="results/summary/expr_tmm_gene.tsv",
+    tpm_gene="results/summary/expr_tpm_gene.tsv",
+    counts_gene="results/summary/expr_counts_gene.tsv",
     counts="results/expression/kallisto/kallisto.gene.counts.matrix"
   log:
     "logs/kallisto.log"

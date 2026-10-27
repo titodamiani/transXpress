@@ -222,8 +222,7 @@ Each run folder holds a `config.yaml`. The `config.yaml` of the repository expla
 | `kmers` | `""` | rnaSPAdes only: the k-mer sizes, for example `"-k 21,33,55"`. `""` lets rnaSPAdes choose |
 | `rnaspades_filter` | `"default"` | rnaSPAdes only: the transcript set that becomes `transcriptome.fasta`: `default`, `hard` or `soft` |
 | `scratch` | `""` | the environment variable that holds a folder on the node's local disk. See [Working files on the node's local disk](#working-files-on-the-nodes-local-disk) |
-| `transdecoder_orfs` | `"all"` | the ORF set of `transcriptome.pep`: `all` or `single_best` |
-| `annotated_fasta_prefix` | `""` | a text put before each sequence name in `transcriptome_annotated.*`, as `<prefix>\|<name>`, for example the species |
+| `annotated_fasta_prefix` | `""` | a text put before each sequence name in `transcriptome_annotated.*` and `transcriptome_*_annotated.pep`, as `<prefix>\|<name>`, for example the species |
 | `e_value_threshold` | `"1e-6"` | the E-value limit of the Pfam, Rfam and BLAST searches |
 | `dispersion` | `"0.1"` | the edgeR dispersion for a pair of conditions that has a condition with one replicate |
 | `signalp` | `"eukarya"` | the SignalP organism group: `eukarya` or `other`. `""` turns SignalP off |
@@ -319,8 +318,10 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
   resources/     db/  busco_downloads/
   results/
     summary/       run_info.txt
-                   transcriptome_annotated.fasta  transcriptome_annotated.pep
-                   transcriptome.fasta  transcriptome.gene_trans_map  transcriptome.pep
+                   transcriptome_annotated.fasta
+                   transcriptome_{all_orfs,single_best_orf}_annotated.pep
+                   transcriptome.fasta  transcriptome.gene_trans_map
+                   transcriptome_{all_orfs,single_best_orf}.pep
                    expr_{tmm,tpm,counts}_{isoform,gene}.tsv
                    transcriptome_stats.txt  busco_report.txt
     qc/            fastqc/        before_trim/  after_trim/
@@ -332,7 +333,7 @@ A run writes into `results/`, with one folder per step. The folder `summary/` ho
                    trimmed_reads/ the trimmed reads
     assembly/      rnaspades/     the rnaSPAdes output folder
                    trinity/  trinity.Trinity.fasta  trinity.Trinity.fasta.gene_trans_map
-    transdecoder/  transcriptome.orfs
+    transdecoder/  transcriptome.orfs  transcriptome_both_sets.pep
                    transcriptome_all_orfs.{pep,cds,gff3,bed}
                    transcriptome_single_best_orf.{pep,cds,gff3,bed}
                    longorfs/      the TransDecoder.LongOrfs folder
@@ -350,9 +351,9 @@ The files most analyses start from:
 |---|---|
 | `results/summary/transcriptome.fasta` | the assembly |
 | `results/summary/transcriptome.gene_trans_map` | the gene of each transcript |
-| `results/summary/transcriptome.pep` | the proteins of the ORF set that `transdecoder_orfs` picks |
+| `results/summary/transcriptome_{all_orfs,single_best_orf}.pep` | the proteins of the two ORF sets, copies of the files in `results/transdecoder/`. `all_orfs` keeps every ORF that TransDecoder accepts, so a transcript can give several proteins. `single_best_orf` keeps one ORF per transcript |
 | `results/annotation/*.out` | the Pfam, Swiss-Prot, Rfam, SignalP, TargetP and TMHMM results |
-| `results/summary/transcriptome_annotated.fasta`, `.pep` | the transcripts and proteins with the annotations in their headers |
+| `results/summary/transcriptome_annotated.fasta`, `transcriptome_{all_orfs,single_best_orf}_annotated.pep` | the transcripts and the proteins of each ORF set with the annotations in their headers |
 | `results/summary/expr_tmm_{isoform,gene}.tsv` | the TPM of each transcript and gene, scaled across the libraries with TMM. ExN50 and the annotated FASTA headers read the isoform file |
 | `results/summary/expr_tpm_{isoform,gene}.tsv` | the TPM of each transcript and gene in each library, with no scaling across the libraries |
 | `results/summary/expr_counts_{isoform,gene}.tsv` | the estimated read counts. Trinity computes the gene counts from the gene TPM and the library size, after Soneson et al. 2016 |
@@ -524,7 +525,7 @@ The plugin writes the Slurm log of each job to `.snakemake/slurm_logs/rule_<rule
 ### Number of jobs
 The profile keeps at most 50 jobs in the queue (`jobs: 50`) and submits at most one job per second (`max-jobs-per-timespan: "1/1s"`), so a run does not flood the scheduler.
 
-The annotation rules run one job per chunk of sequences and tool. Each job reads the whole database, so larger chunks mean fewer jobs. The chunk sizes are the config keys `annotation_chunk_fasta` (1000 transcripts, for rfam and blastx), `annotation_chunk_orfs` (5000, for pfam and blastp) and `annotation_chunk_pep` (5000, for tmhmm, signalp and targetp). At these sizes a chunk job takes up to about 2.5 hours for blastx and about 1 hour for the others. The merged results follow the order of the sequences at any chunk size.
+The annotation rules run one job per chunk of sequences and tool. Each job reads the whole database, so larger chunks mean fewer jobs. The chunk sizes are the config keys `annotation_chunk_fasta` (1000 transcripts, for rfam and blastx), `annotation_chunk_orfs` (5000, for pfam and blastp) and `annotation_chunk_pep` (5000, for tmhmm, signalp and targetp, which read the proteins of both ORF sets from `transcriptome_both_sets.pep`). At these sizes a chunk job takes up to about 2.5 hours for blastx and about 1 hour for the others. The merged results follow the order of the sequences at any chunk size.
 
 ### Flags that belong to your cluster
 Some sbatch flags are site specific: a node to avoid, a processor generation to insist on, an account to charge. They go in the profile of your site, as resources that the `slurm` plugin turns into sbatch flags. `profiles/aurum/config.yaml` is an example.

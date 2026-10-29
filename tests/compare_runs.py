@@ -18,6 +18,8 @@ three tab-separated fields: a path pattern (fnmatch, relative to the run folder,
 matches "/"), a mode, and the reason the file may differ. The mode is one of:
   skip         the file may differ in any way, or exist in one run only
   strip:REGEX  the file matches after the lines that REGEX matches are dropped from both
+  sorted:REGEX the file matches after the lines that REGEX matches are dropped, each run of spaces
+               is one space, and the lines are sorted, in both
 Lines that start with "#" and empty lines are comments.
 
 Exit code 0: every file matches or is allowed to differ. 1: a file differs, or is in one run only.
@@ -49,8 +51,9 @@ def read_allowed(path):
         if not line.strip() or line.startswith("#"):
             continue
         fields = line.split("\t")
-        if len(fields) != 3 or not (fields[1] == "skip" or fields[1].startswith("strip:")):
-            sys.exit("%s line %d: expected pattern, tab, mode (skip or strip:REGEX), tab, reason" % (path, number))
+        if len(fields) != 3 or not (fields[1] == "skip" or fields[1].startswith(("strip:", "sorted:"))):
+            sys.exit("%s line %d: expected pattern, tab, mode (skip, strip:REGEX or sorted:REGEX), tab, reason"
+                     % (path, number))
         rules.append((fields[0], fields[1], fields[2]))
     return rules
 
@@ -86,9 +89,14 @@ def md5(data):
     return hashlib.md5(data).hexdigest()
 
 
-def stripped(data, regex):
+def stripped(data, mode):
+    """The content a strip: or sorted: rule compares."""
+    regex = mode.split(":", 1)[1]
     pattern = re.compile(regex.encode())
-    return b"\n".join(line for line in data.split(b"\n") if not pattern.search(line))
+    lines = [line for line in data.split(b"\n") if not pattern.search(line)]
+    if mode.startswith("sorted:"):
+        lines = sorted(re.sub(b" +", b" ", line) for line in lines)
+    return b"\n".join(lines)
 
 
 def first_difference(a, b):
@@ -158,10 +166,10 @@ def main():
             return ("same",)
         if rule is None:
             return ("failed", "DIFF %s (%s)" % (name, first_difference(a, b)))
-        if stripped(a, rule[1][6:]) == stripped(b, rule[1][6:]):
+        if stripped(a, rule[1]) == stripped(b, rule[1]):
             return ("allowed", rule[0])
-        return ("failed", "DIFF %s (%s; allowed only after dropping lines of %s)"
-                % (name, first_difference(stripped(a, rule[1][6:]), stripped(b, rule[1][6:])), rule[1][6:]))
+        return ("failed", "DIFF %s (%s; allowed only for mode %s)"
+                % (name, first_difference(stripped(a, rule[1]), stripped(b, rule[1])), rule[1]))
 
     names = sorted(set(files_a) | set(files_b))
     start = time.time()

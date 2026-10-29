@@ -18,6 +18,8 @@ three tab-separated fields: a path pattern (fnmatch, relative to the run folder,
 matches "/"), a mode, and the reason the file may differ. The mode is one of:
   skip         the file may differ in any way, or exist in one run only
   strip:REGEX  the file matches after the lines that REGEX matches are dropped from both
+  sorted:REGEX the file matches after the lines that REGEX matches are dropped, each run of spaces
+               is one space, and the lines are sorted, in both
 Lines that start with "#" and empty lines are comments.
 
 Exit code 0: every file matches or is allowed to differ. 1: a file differs, or is in one run only.
@@ -27,11 +29,13 @@ the headers. Exit code 0 when the two sets of sequences are the same.
 """
 import argparse
 import collections
+import concurrent.futures
 import fnmatch
 import gzip
 import hashlib
 import re
 import sys
+import time
 from pathlib import Path
 
 
@@ -47,8 +51,9 @@ def read_allowed(path):
         if not line.strip() or line.startswith("#"):
             continue
         fields = line.split("\t")
-        if len(fields) != 3 or not (fields[1] == "skip" or fields[1].startswith("strip:")):
-            sys.exit("%s line %d: expected pattern, tab, mode (skip or strip:REGEX), tab, reason" % (path, number))
+        if len(fields) != 3 or not (fields[1] == "skip" or fields[1].startswith(("strip:", "sorted:"))):
+            sys.exit("%s line %d: expected pattern, tab, mode (skip, strip:REGEX or sorted:REGEX), tab, reason"
+                     % (path, number))
         rules.append((fields[0], fields[1], fields[2]))
     return rules
 
@@ -67,13 +72,31 @@ def content(path, run):
     return ENV_FOLDER.sub(b"@ENV@", data)
 
 
+def raw_equal(path_a, path_b):
+    """True when both files have the same bytes. It reads 1 MiB at a time, so a big file stays out of memory."""
+    if path_a.stat().st_size != path_b.stat().st_size:
+        return False
+    with open(path_a, "rb") as fa, open(path_b, "rb") as fb:
+        while True:
+            chunk = fa.read(1 << 20)
+            if chunk != fb.read(1 << 20):
+                return False
+            if not chunk:
+                return True
+
+
 def md5(data):
     return hashlib.md5(data).hexdigest()
 
 
-def stripped(data, regex):
+def stripped(data, mode):
+    """The content a strip: or sorted: rule compares."""
+    regex = mode.split(":", 1)[1]
     pattern = re.compile(regex.encode())
-    return b"\n".join(line for line in data.split(b"\n") if not pattern.search(line))
+    lines = [line for line in data.split(b"\n") if not pattern.search(line)]
+    if mode.startswith("sorted:"):
+        lines = sorted(re.sub(b" +", b" ", line) for line in lines)
+    return b"\n".join(lines)
 
 
 def first_difference(a, b):
@@ -123,27 +146,44 @@ def main():
     allowed = {}
     failed = []
 
-    for name in sorted(set(files_a) | set(files_b)):
+    def compare(name):
+        """('same',), ('allowed', pattern) or ('failed', message) for one file."""
         rule = next((r for r in rules if fnmatch.fnmatchcase(name, r[0])), None)
         if name not in files_a or name not in files_b:
             # a skip rule also lets a file exist in one run only
             if rule is not None and rule[1] == "skip":
-                allowed.setdefault(rule[0], []).append(name)
-            else:
-                failed.append("only in %s: %s" % (args.run_a if name in files_a else args.run_b, name))
-            continue
+                return ("allowed", rule[0])
+            return ("failed", "only in %s: %s" % (args.run_a if name in files_a else args.run_b, name))
+        if rule is not None and rule[1] == "skip":
+            return ("allowed", rule[0])
+        # Equal bytes are equal after the replacements too, except when a file holds the run folder path
+        # in both runs: the paths differ, so the raw bytes differ and the slow path below decides.
+        if raw_equal(files_a[name], files_b[name]):
+            return ("same",)
         a = content(files_a[name], args.run_a)
         b = content(files_b[name], args.run_b)
         if a == b:
-            same += 1
-            continue
+            return ("same",)
         if rule is None:
-            failed.append("DIFF %s (%s)" % (name, first_difference(a, b)))
-        elif rule[1] == "skip" or stripped(a, rule[1][6:]) == stripped(b, rule[1][6:]):
-            allowed.setdefault(rule[0], []).append(name)
-        else:
-            failed.append("DIFF %s (%s; allowed only after dropping lines of %s)"
-                          % (name, first_difference(stripped(a, rule[1][6:]), stripped(b, rule[1][6:])), rule[1][6:]))
+            return ("failed", "DIFF %s (%s)" % (name, first_difference(a, b)))
+        if stripped(a, rule[1]) == stripped(b, rule[1]):
+            return ("allowed", rule[0])
+        return ("failed", "DIFF %s (%s; allowed only for mode %s)"
+                % (name, first_difference(stripped(a, rule[1]), stripped(b, rule[1])), rule[1]))
+
+    names = sorted(set(files_a) | set(files_b))
+    start = time.time()
+    # 4 threads: the files are on a shared disk. map keeps the order of names, so the output does not change.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        for number, (name, result) in enumerate(zip(names, pool.map(compare, names)), 1):
+            if result[0] == "same":
+                same += 1
+            elif result[0] == "allowed":
+                allowed.setdefault(result[1], []).append(name)
+            else:
+                failed.append(result[1])
+            if number % 100 == 0:
+                print("%d of %d files, %d s" % (number, len(names), time.time() - start), file=sys.stderr, flush=True)
 
     print("same content: %d files" % same)
     if not args.quiet:

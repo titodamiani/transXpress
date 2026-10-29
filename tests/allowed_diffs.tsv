@@ -1,6 +1,8 @@
 # Files under results/ that may differ between two runs of the same input, and the reason for each.
 # Fields, separated by one tab: path pattern, mode, reason. See tests/compare_runs.py.
 results/*.pdf	strip:^/(CreationDate|ModDate) 	the PDF holds the time it was made
+results/annotation/*pfam*.out	sorted:^#	a run made with hmmscan --cpu 2 or more writes the name column of --domtblout with a width that changes from run to run (10 runs of one query: 22 or 27 characters); the rows are the same after each run of spaces is one space and the lines are sorted
+results/annotation/*rfam*.out	sorted:^#	cmscan writes hits with the same score in another order (the infernal tie); the rows are the same after sorting
 results/annotation/*.out	strip:^# (Date:|SignalP-|TargetP-|Option settings:)	the header of a cmscan or hmmscan file holds the options of the run, with the name of the file the tool wrote (<chunk>.out.part), and the header of a cmscan, SignalP or TargetP file holds the date or time of the run
 results/assembly/rnaspades/K*/configs/config.info	strip:^tmp_dir 	rnaSPAdes names its temporary folder at random
 results/assembly/rnaspades/K*/final.lib_data	strip:^[^\n]{0,4}---$	the first bytes give the length of the text after them, which holds the run folder path

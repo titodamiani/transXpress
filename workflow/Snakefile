@@ -1,5 +1,5 @@
-# transXpress: RNA-Seq de novo assembly and annotation. Run it in a run folder that holds config.yaml and a
-# samples file: snakemake --snakefile ../workflow/Snakefile
+# transXpress: RNA-Seq de novo assembly and annotation. Run it from the folder of the clone, in a run folder
+# runs/<name>/ that holds config.yaml and a samples file: snakemake --profile profiles/<site> -d runs/<name>
 
 # The image that holds the conda env of every rule, built from the Dockerfile at the top of the repository by
 # .github/workflows/image.yml. A run with --software-deployment-method conda apptainer takes the rule envs from

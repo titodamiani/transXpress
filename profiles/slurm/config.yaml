@@ -1,5 +1,5 @@
 # Snakemake profile for a Slurm cluster, with snakemake-executor-plugin-slurm.
-# Run in a run folder: snakemake --profile /path/to/transXpress/profiles/slurm
+# Run from the folder of the clone, in a run folder: snakemake --profile profiles/slurm -d runs/<name>
 #
 # Each rule gives its threads and its mem_mb and runtime resources. config.yaml sets them for the
 # rules whose size follows the dataset. The plugin turns them into the sbatch flags --cpus-per-task,
@@ -13,7 +13,7 @@
 
 executor: slurm
 software-deployment-method: conda
-# found next to this folder, so the profile works from any run folder
+# Snakemake turns a path that exists next to this file into an absolute path, so the profile works with any -d folder
 snakefile: ../../workflow/Snakefile
 # At most this many jobs in the queue at once, and at most one submission per second, so a run of
 # thousands of jobs does not flood the scheduler.

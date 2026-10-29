@@ -1,7 +1,7 @@
 # Snakemake profile for the Aurum cluster (IOCB Prague): profiles/slurm plus the Aurum settings.
-# Run in a run folder, with the snakemake9 env active:
-#   snakemake --profile /path/to/transXpress/profiles/aurum
-# aurum.md in the project folder describes the env and the launcher.
+# Run from the folder of the clone, in a run folder, with the snakemake9 env active:
+#   snakemake --profile profiles/aurum -d runs/<name>
+# aurum.md in the project folder describes the env.
 
 executor: slurm
 # The rule envs come from the main image (MAIN_IMAGE in workflow/Snakefile). apptainer also runs SignalP

@@ -15,6 +15,7 @@ transXpress trims RNA-Seq reads, assembles them with Trinity or rnaSPAdes, finds
 | `workflow/schemas/config.schema.yaml` | the type and the default of each config key. Snakemake checks `config.yaml` against it at the start of a run |
 | `config.yaml` | the config of a run, with a comment for each key. Copy it into each run folder |
 | `profiles/` | the Snakemake options of each place where jobs run: `local`, `slurm`, `aurum` |
+| `runs/` | the run folders, `runs/<name>/`, one for each run. Git does not track this folder |
 | `Dockerfile` | the recipe of the main image |
 | `containers/` | `signalp.def` and `targetp.def`, the recipes of the private SignalP and TargetP images |
 | `tests/` | the test data, the test config, `make_run.sh`, `compare_runs.py` and `allowed_diffs.tsv` |
@@ -74,7 +75,7 @@ The pin file of each env gives the exact version and build of every package. `re
 
 6. Install SignalP and TargetP, or turn them off with `signalp: ""` and `targetp: ""`. See [SignalP and TargetP](#signalp-and-targetp).
 
-7. Make a run folder. Put a copy of `config.yaml` there, and a tab-separated file called `samples.txt` that says where to find the raw read FASTQ files:
+7. Make a run folder `runs/<name>/` in the clone, for example `runs/piper09/`. Each run has its own folder, so one clone holds many runs. Put a copy of `config.yaml` there, and a tab-separated file called `samples.txt` that says where to find the raw read FASTQ files:
    ~~~
    cond_A      cond_A_rep1 A_rep1_left.fq    A_rep1_right.fq
    cond_A      cond_A_rep2 A_rep2_left.fq    A_rep2_right.fq
@@ -129,7 +130,7 @@ software-deployment-method:
 apptainer-prefix: /path/to/images
 apptainer-args: "--bind /path/to/transXpress,/path/to/databases,/path/to/reads"
 ~~~
-Apptainer shows a job only some folders of the host, such as `$HOME`, `/tmp`, the run folder and the `--bind` folders. The Apptainer config of a site can add more. A job in the image reads the scripts and the adapters of the transXpress folder, the databases of a shared `db_dir`, the reads and its temporary folder. Bind each of these that is outside the run folder. `profiles/aurum/config.yaml` is an example.
+Apptainer shows a job only some folders of the host, such as `$HOME`, `/tmp`, the run folder and the `--bind` folders. The Apptainer config of a site can add more. A job in the image reads the scripts and the adapters of the transXpress folder, the databases of a shared `db_dir`, the reads and its temporary folder. Bind each of these that is outside the run folder. The run folder `runs/<name>/` is inside the clone, but a job sees only the run folder and not the rest of the clone, so bind the clone too, unless it is under a folder that you bind. `profiles/aurum/config.yaml` is an example.
 
 ### Conda mode
 
@@ -238,7 +239,7 @@ The figures of the `<rule>_*` keys suit about 420 million read pairs (18 Illumin
 
 ## Running transXpress
 
-Run the pipeline in a run folder that holds `config.yaml` and the samples file. A profile is a folder in `profiles/` whose `config.yaml` holds the Snakemake options of the place where the jobs run:
+Run the pipeline from the folder of the clone, with `-d runs/<name>` (`--directory`) to name the run folder. The run folder holds `config.yaml` and the samples file. Snakemake reads `config.yaml` and writes `results/`, `logs/` and `.snakemake/` in that folder. A profile is a folder in `profiles/` whose `config.yaml` holds the Snakemake options of the place where the jobs run:
 
 | Profile | Where the jobs run | Rule envs |
 |---|---|---|
@@ -248,10 +249,10 @@ Run the pipeline in a run folder that holds `config.yaml` and the samples file. 
 
 ~~~~
 conda activate transxpress
-cd /path/to/run-folder
-snakemake --profile /path/to/transXpress/profiles/local
+cd /path/to/transXpress
+snakemake --profile profiles/local -d runs/<name>
 ~~~~
-Each profile names the `workflow/Snakefile` of its own copy of transXpress (`snakefile: ../../workflow/Snakefile`), so the command works in any run folder. Options on the command line come after the profile, for example `--conda-prefix /path/to/folder`. A command line option replaces the profile value of the same option.
+Each profile names the `workflow/Snakefile` of its own copy of transXpress (`snakefile: ../../workflow/Snakefile`), and Snakemake turns this path into an absolute path before it changes to the `-d` folder, so the command works for any run folder. Options on the command line come after the profile, for example `--conda-prefix /path/to/folder`. A command line option replaces the profile value of the same option.
 
 Each rule gives its thread count and two resources: `mem_mb`, the memory in MB, and `runtime`, the time limit. The rules whose size follows the dataset take these from `config.yaml`. The other rules keep fixed figures in their rule files.
 
@@ -288,8 +289,8 @@ cluster-generic-submit-cmd: "qsub -j oe -o logs/ -l select=1:ncpus={threads}:mem
 
 The main Snakemake process needs the `transxpress` environment. Run it in its own job and activate the environment first. Replace the paths with yours:
 ~~~
-cd /path/to/run-folder
-sbatch --time=7-00:00:00 --mem=24G --cpus-per-task=2 -o main.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate /path/to/transxpress-env && snakemake --profile /path/to/transXpress/profiles/slurm'
+cd /path/to/transXpress
+sbatch --time=7-00:00:00 --mem=24G --cpus-per-task=2 -o main.%j.out --wrap 'source /path/to/miniforge/etc/profile.d/conda.sh && conda activate /path/to/transxpress-env && snakemake --profile profiles/slurm -d runs/<name>'
 ~~~
 The time is the limit for the whole run, so it has to be longer than the longest job: `trinity` asks for 7 days. In conda mode, the main process builds the environments of the annotation rules during the run, and a build needs about 10 GB, so the job asks for 24 GB.
 
@@ -300,11 +301,11 @@ Inside a job, the `slurm` plugin prints a warning and removes the `SLURM_` varia
 You can run specific steps of the pipeline by specifying a rule or a resulting file:
 ~~~
 # run only the rules that make the FastQC and MultiQC report of the input data, to check its quality
-snakemake --profile /path/to/transXpress/profiles/slurm results/qc/multiqc/before_trim/multiqc_fastqc.txt
+snakemake --profile profiles/slurm -d runs/<name> results/qc/multiqc/before_trim/multiqc_fastqc.txt
 ~~~
 ~~~
 # run only the rules to produce the samples_trimmed.txt file
-snakemake --profile /path/to/transXpress/profiles/slurm results/trimmomatic/samples_trimmed.txt
+snakemake --profile profiles/slurm -d runs/<name> results/trimmomatic/samples_trimmed.txt
 ~~~
 
 ## Output layout
@@ -312,7 +313,7 @@ snakemake --profile /path/to/transXpress/profiles/slurm results/trimmomatic/samp
 A run writes into `results/`, with one folder per step. The folder `summary/` holds the files that people and later pipelines read, whichever rule writes them. Each step folder holds the rest of its result files at the top and its working files in a subfolder. The rule logs go to `logs/`, and the databases of the default `db_dir` go to `resources/`.
 
 ~~~
-<run folder>/
+runs/<name>/
   config.yaml  samples.txt
   logs/          <rule>.log, and <rule>/<wildcard>.log for a rule with many jobs
   resources/     db/  busco_downloads/
@@ -369,7 +370,7 @@ Two rules delete files, and neither runs unless you name it:
 | `delete_intermediates` | the trimmed reads and the kallisto, bowtie2 and RSEM indexes | every result. A later `snakemake` run in the folder has nothing to do |
 
 ~~~
-snakemake --profile /path/to/transXpress/profiles/local delete_intermediates
+snakemake --profile profiles/local -d runs/<name> delete_intermediates
 ~~~
 
 ## Notes on results
@@ -396,7 +397,7 @@ The download checks Pfam and Swiss-Prot against the md5 their servers publish. R
 
 ### One copy in each run folder
 
-This is the default, `db_dir: "resources/db"`. Each run folder downloads its own databases into `resources/db/`. BUSCO downloads its lineage into `resources/busco_downloads/`.
+This is the default, `db_dir: "resources/db"`. Each run folder downloads its own databases into `runs/<name>/resources/db/`, so many runs in one clone hold many copies. Use a shared copy for many runs. BUSCO downloads its lineage into `resources/busco_downloads/`.
 
 ### One shared copy for many run folders
 
@@ -434,7 +435,7 @@ cd tests
 
 The reproducibility test runs the test data (T1) twice and checks that the two `results/` folders hold the same bytes. It needs a database folder filled by `download_databases` (see [One shared copy for many run folders](#one-shared-copy-for-many-run-folders)).
 
-1. `tests/make_run.sh <folder> <assembler> <db_dir>` makes a T1 run folder directly inside the repository folder: the test data, `test_samples.txt` and a `config.yaml` from `tests/config.yaml`. In this config SignalP and TargetP are off, and Trinity runs with `--inchworm_cpu 1`.
+1. `tests/make_run.sh <folder> <assembler> <db_dir>` makes a T1 run folder directly inside the repository folder, not under `runs/`: the test data, `test_samples.txt` and a `config.yaml` from `tests/config.yaml`. In this config SignalP and TargetP are off, and Trinity runs with `--inchworm_cpu 1`.
 2. Run the pipeline in each folder.
 3. `tests/compare_runs.py <folder A> <folder B>` compares the two `results/` folders file by file.
 

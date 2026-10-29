@@ -100,7 +100,7 @@ rule pfam_parallel:
   params:
     evalue=config["e_value_threshold"]
   threads:
-    2
+    1
   resources:
     mem_mb=2048,
     runtime="4h"
@@ -109,7 +109,9 @@ rule pfam_parallel:
     # The tool writes {output}.part. The chunk gets its name only when the file ends with the "# [ok]" line
     # of a finished hmmscan, so a job that is killed or hangs leaves no cut file under the name Snakemake trusts.
     rm -f {output}.part
-    # Transdecoder requires --domtblout output
+    # Transdecoder requires --domtblout output.
+    # One thread: with more, the width of the name column of --domtblout can change from run to run, and the
+    # chunk takes as long (test of 3 chunks, 3 runs each: cpu 1 / cpu 2 = 0.99 to 1.02).
     hmmscan -E {params.evalue} --cpu {threads} --domtblout {output}.part {input[db]} {input[fasta]} &> {log}
     tail -n 1 {output}.part | grep -qx '# \\[ok\\]' || {{ echo "{output}.part does not end with # [ok]" >> {log}; exit 1; }}
     mv {output}.part {output}

@@ -1,3 +1,5 @@
+# The run folders: runs/<name>/ holds config.yaml, samples.txt and the output of one run
+/runs/
 # Output of a run, for example a test run in tests/
 results/
 logs/

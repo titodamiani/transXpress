@@ -36,7 +36,8 @@ rule align_reads:
     # Remove old markers so the aligner runs again on the trimmed reads.
     for rep in $(awk '{{print $2}}' samples_trimmed.txt); do rm -f "$rep/bowtie2.bam.ok"; done
 
-    TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
+    source {workflow.basedir}/scripts/tools.sh
+    TRINITY_HOME=$(trinity_home)
     $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {params.strand} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
 
     # for_rsem.bam is a large temporary copy of the alignment. Nothing reads it later.
@@ -104,7 +105,7 @@ rule trinity_DE:
   Runs Trinity script to perform differential expression analysis using edgeR.
   """
   input:
-    samples=config["samples_file"],
+    samples=checked_samples_file,
     expression="results/expression/kallisto/kallisto.gene.counts.matrix"
   output:
     directory("results/expression/edger")
@@ -121,7 +122,8 @@ rule trinity_DE:
     runtime="4h"
   shell:
     """
-    TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
+    source {workflow.basedir}/scripts/tools.sh
+    TRINITY_HOME=$(trinity_home)
 
     # run_DE_analysis.pl estimates the dispersion for each pair of samples in which both samples have
     # more than one replicate, and uses --dispersion for a pair in which a sample has one replicate
@@ -164,7 +166,8 @@ rule kallisto:
   retries: 0
   shell:
     """
-    TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
+    source {workflow.basedir}/scripts/tools.sh
+    TRINITY_HOME=$(trinity_home)
     # abundance_estimates_to_matrix.pl writes the matrix rows in Perl hash order, which is random
     # in each run. A fixed Perl hash seed gives the same row order in each run.
     export PERL_HASH_SEED=0

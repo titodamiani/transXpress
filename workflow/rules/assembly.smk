@@ -29,7 +29,8 @@ rule trinity:
   shell:
     """
     # record the computer this ran on, because the assembly depends on it
-    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
+    source {workflow.basedir}/scripts/tools.sh
+    record_host > {log}
 
     # Trinity writes one folder per read cluster in read_partitions, which can reach millions of files.
     # On the local disk they never reach the run folder. A failed run copies nothing back: the files are
@@ -85,7 +86,8 @@ rule rnaspades:
   shell:
     """
     # record the computer this ran on, because the assembly depends on it
-    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
+    source {workflow.basedir}/scripts/tools.sh
+    record_host > {log}
 
     # rnaSPAdes writes about 100 GB of working files on a large dataset. When the scratch key names a
     # variable that is set in this job, it works in a folder on the node's local disk, and its output

@@ -3,7 +3,7 @@ rule fastqc:
   Runs fastQC on individual reads files: the input reads (before_trim) or the trimmed reads (after_trim).
   """
   input:
-    samples=lambda wildcards: config["samples_file"] if wildcards.stage == "before" else "results/trimmomatic/samples_trimmed.txt"
+    samples=lambda wildcards: checked_samples_file(wildcards) if wildcards.stage == "before" else "results/trimmomatic/samples_trimmed.txt"
   output:
     directory("results/qc/fastqc/{stage}_trim")
   wildcard_constraints:
@@ -27,13 +27,13 @@ rule fastqc:
     # fonts. Java keeps the fonts it got in <user.home>/.java/fonts, so user.home is the job's folder.
     # (Snakemake sets TMPDIR, see job_tmpdir)
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/fastqc.XXXXXX")
+    trap 'rm -rf "$TMP"' EXIT
     ENV=$(dirname $(dirname $(command -v fastqc)))
     printf '<?xml version="1.0"?>\\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\\n<fontconfig>\\n<dir>%s/fonts</dir>\\n<dir>%s/share/fonts</dir>\\n<include ignore_missing="yes">%s/etc/fonts/conf.d</include>\\n<cachedir>%s/cache</cachedir>\\n</fontconfig>\\n' \
       "$ENV" "$ENV" "$ENV" "$TMP" > "$TMP/fonts.conf"
     export FONTCONFIG_FILE="$TMP/fonts.conf" JAVA_TOOL_OPTIONS="-Duser.home=$TMP"
     # {threads} files at a time
     fastqc -f fastq -t {threads} -o {output} $FILES &>> {log}
-    rm -rf "$TMP"
     """
 
 
@@ -135,7 +135,8 @@ rule trinity_stats:
     runtime="4h"
   shell:
     """
-    TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
+    source {workflow.basedir}/scripts/tools.sh
+    TRINITY_HOME=$(trinity_home)
     # contig_ExN50_statistic.pl reads the genes in Perl hash order, which is random in each run, and
     # genes tied on expression keep that order. A fixed Perl hash seed gives the same order in each run.
     export PERL_HASH_SEED=0

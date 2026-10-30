@@ -44,8 +44,10 @@ rule trimmomatic_parallel:
   shell:
     """
     # record the computer this ran on
-    ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
-    read SAMPLE REPLICATE F_READS R_READS < {input}
+    source {workflow.basedir}/scripts/tools.sh
+    record_host > {log}
+    # read returns 1 for a last line without a newline, which split copies as it is. Snakemake made the input.
+    read SAMPLE REPLICATE F_READS R_READS < {input} || true
     # an empty line of the samples file gives an empty marker
     if [ -z "$REPLICATE" ]; then
       touch {output}

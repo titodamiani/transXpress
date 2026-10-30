@@ -129,7 +129,10 @@ def main():
     if args.sequences:
         sets = []
         for run in (args.run_a, args.run_b):
-            lines = (Path(run) / args.sequences).read_bytes().split(b">")[1:]
+            data = (Path(run) / args.sequences).read_bytes()
+            assert data.startswith(b">") or not data, "%s does not start with a header" % (Path(run) / args.sequences)
+            # a record starts with ">" at the start of a line; a ">" inside a header does not cut it
+            lines = data[1:].split(b"\n>") if data else []
             sets.append(sorted(b"".join(record.split(b"\n")[1:]) for record in lines))
         print("sequences: %d and %d" % (len(sets[0]), len(sets[1])))
         if sets[0] == sets[1]:

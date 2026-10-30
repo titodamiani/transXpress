@@ -32,7 +32,7 @@ def blast_hits(path):
 
 def hmmer_hits(path, columns, id_column, name_column, evalue_column):
   """
-  Sequence ID to "<target name> <description>E=<e-value>" of the first hit of each sequence, from a
+  Sequence ID to "<target name> <description> E=<e-value>" of the first hit of each sequence, from a
   table of hmmscan or cmscan, whose description is the last of its columns.
   """
   hits = {}
@@ -43,7 +43,7 @@ def hmmer_hits(path, columns, id_column, name_column, evalue_column):
       row = re.split(" +", line, columns - 1)
       # the tools list the hits of each sequence from the best one down
       if len(row) == columns and row[id_column] not in hits:
-        hits[row[id_column]] = row[name_column] + " " + row[columns - 1] + "E=" + row[evalue_column]
+        hits[row[id_column]] = row[name_column] + " " + row[columns - 1].rstrip("\n") + " E=" + row[evalue_column]
   return hits
 
 with open(log[0], "w") as log_handle:

@@ -125,7 +125,7 @@ runs/<name>/results/
 │   ├── expr_{tmm,tpm,counts}_{isoform,gene}.tsv  # TMM-scaled TPM, TPM, estimated counts
 │   ├── transcriptome_stats.txt       # Trinity statistics
 │   ├── busco_report.txt              # BUSCO score
-│   └── run_info.txt                  # main-job and assembly node, commit, images, database releases, tool versions
+│   └── run_info.txt                  # main-job and assembly node, commit, images, database releases and md5, tool versions
 ├── annotation/                       # {pfam,sprotblastp}_orfs.out, {rfam,sprotblastx}_fasta.out, {signalp,targetp,tmhmm}_pep.out, chunks/
 ├── transdecoder/                     # transcriptome_{all_orfs,single_best_orf}.{pep,cds,gff3,bed}, longorfs/
 ├── assembly/                         # rnaspades/ or trinity.Trinity.fasta (+ .gene_trans_map)

@@ -15,6 +15,7 @@ Read `AGENTS.md` first (layout, rules, traps). Run commands and config keys are 
 
 | Job | What it does |
 |---|---|
+| `keys` | `tests/check_keys.py`: `config.yaml`, `config.schema.yaml` and the README table name the same keys |
 | `databases` | fills a database folder with `download_databases` at the releases of `test.yml` and caches it |
 | `t1` | for `rnaspades` and `trinity`: two T1 runs in conda mode, then `compare_runs.py` |
 | `image` | calls `image.yml`: pin files, env paths of the `Dockerfile`, the main image on ghcr.io |

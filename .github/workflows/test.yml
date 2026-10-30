@@ -16,6 +16,13 @@ env:
   LINEAGE: viridiplantae_odb12
 
 jobs:
+  keys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pyyaml && python tests/check_keys.py
+
   databases:
     runs-on: ubuntu-latest
     timeout-minutes: 120

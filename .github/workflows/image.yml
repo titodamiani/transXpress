@@ -1,17 +1,7 @@
 name: image
 
-# The main image: the conda env of every rule, each one built from its pin file, in one Docker image on
-# ghcr.io. workflow/Snakefile names it in MAIN_IMAGE. test.yml calls this workflow before its image run.
-#
-# pins: makes the pin file <env>.linux-64.pin.txt of each env file in a clean linux-64 conda, with
-#   conda list --explicit --md5, and uploads the pin files as the artifact "pins". A pull request
-#   with an env file and no pin file fails here; commit the pin files of the artifact. A manual run
-#   of this workflow (workflow_dispatch) makes the pin files of all env files again. A manual run of
-#   test.yml, which calls this workflow, builds the image like any other run of test.yml. An env file
-#   with a name: is a named env, which Snakemake does not build, so it gets no pin file.
-# image: checks the env paths in Dockerfile against snakemake --containerize, then builds the image
-#   and pushes it under the tag of MAIN_IMAGE, unless ghcr.io holds it. A tag on ghcr.io that holds an
-#   image of another Dockerfile stops the job: a new Dockerfile needs a new tag.
+# The main image (MAIN_IMAGE in workflow/Snakefile), called by test.yml. Jobs: pins, image.
+# See CONTRIBUTING.md, section "The main image".
 
 on:
   workflow_call:
@@ -48,7 +38,7 @@ jobs:
         if: steps.find.outputs.envs != ''
         shell: bash -el {0}
         env:
-          # tmhmm.py imports numpy in its setup.py, so pip builds it against the numpy of its env
+          # tmhmm.py imports numpy in its setup.py
           PIP_NO_BUILD_ISOLATION: "0"
         run: |
           conda config --set channel_priority strict
@@ -99,10 +89,8 @@ jobs:
       - name: Check the env paths of the Dockerfile
         shell: bash -el {0}
         run: |
-          # Snakemake finds an env in the image at /conda-envs/<hash>. The hash covers the env file, its
-          # pin file for the platform and its post-deploy script, so it has to come from linux-64.
-          # SignalP and TargetP are off in a T1 folder, so their rules take no named conda env, which
-          # snakemake --containerize cannot put in an image
+          # the env hash covers the pin file of the platform, so it has to come from linux-64
+          # SignalP and TargetP are off in a T1 folder: --containerize cannot put a named env in an image
           tests/make_run.sh containerize-check rnaspades resources/db
           (cd containerize-check && snakemake --profile ../profiles/local --containerize) > containerize.out
           cat containerize.out

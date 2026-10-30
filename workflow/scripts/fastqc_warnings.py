@@ -2,7 +2,6 @@ import pandas as pd
 
 input, output = snakemake.input, snakemake.output
 
-# The titles of the FastQC modules in the report
 mapping = {
 "per_base_sequence_quality": "PER BASE SEQUENCE QUALITY",
 "per_tile_sequence_quality": "PER TILE SEQUENCE QUALITY",

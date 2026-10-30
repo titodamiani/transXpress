@@ -1,15 +1,12 @@
-# Node-local work folder for the heavy rules. A rule sources this file in its shell block.
+# Node-local work folder for the heavy rules; a rule sources this file in its shell block.
 #
 #   scratch_start VAR LOG stop|allow [FAILURE_FUNCTION]
 #
-# VAR is the name of the environment variable that holds the node-local folder, from the scratch key
-# of config.yaml. It is empty when the key is "", and then the rule works in the run folder.
-# With a folder, this makes the work folder $WORK inside $LOCAL_ROOT, writes its name to LOG, and
-# deletes it when the shell ends. $LOCAL_ROOT is empty without the node-local folder.
-# stop: the rule stops with a message when the folder is in RAM (tmpfs), because the work files
-#       count against the job's memory. allow: no check.
-# FAILURE_FUNCTION runs before the folder is deleted when the shell ends with an error, with the exit
-# code in $rc. A job that Slurm kills at its time limit or with scancel runs nothing.
+# VAR names the environment variable of the scratch key ("" works in the run folder). With a folder, this makes
+# $WORK in $LOCAL_ROOT, writes its name to LOG and deletes it when the shell ends ($LOCAL_ROOT is empty without one).
+# stop: exit when the folder is in RAM (tmpfs), because the work files would count against the job's memory.
+# FAILURE_FUNCTION runs before the delete after an error, with the exit code in $rc. A job that Slurm kills
+# at the time limit or with scancel runs nothing.
 
 scratch_start() {
   local var=$1 log=$2 tmpfs=$3
@@ -17,7 +14,6 @@ scratch_start() {
   LOCAL_ROOT=""
   if [ -n "$var" ]; then LOCAL_ROOT="${!var:-}"; fi
   if [ -z "$LOCAL_ROOT" ]; then return 0; fi
-  # A scratch folder in RAM (tmpfs) counts against the memory of the job
   if [ "$tmpfs" = "stop" ] && [ "$(stat -f -c %T "$LOCAL_ROOT" 2>/dev/null)" = "tmpfs" ]; then
     echo "ERROR: the scratch folder $LOCAL_ROOT is in RAM (tmpfs) on $(hostname). Run this rule on a node with a local disk." | tee -a "$log" >&2
     exit 1
@@ -38,18 +34,15 @@ scratch_on_exit() {
 }
 
 
-# The work folder of align_reads and kallisto, which both run align_and_estimate_abundance.pl.
+# The work folder of align_reads and kallisto (align_and_estimate_abundance.pl).
 #
 #   abundance_start RULE VAR LOG OUT_DIR TRANSCRIPTOME GENE_MAP SAMPLES   ...   abundance_finish
 #
-# align_and_estimate_abundance.pl writes the indexes beside the transcriptome and one folder per
-# replicate into the folder it runs in, so it runs in a folder that holds links to the transcriptome
-# and the gene map, and a samples file with the full read paths. That folder is OUT_DIR, the tool folder
-# of the rule, or a folder on the node's local disk when scratch_start finds one. All paths are relative
-# to the run folder. abundance_start sets RUN, LOG, OUT and WORK and goes to the work folder.
-# abundance_finish removes the links and the samples file. With a node-local folder, it copies
-# everything else to OUT_DIR. After an error, the files go to OUT_DIR, where they would stand without
-# the node-local folder.
+# The tool writes the indexes and one folder per replicate into the folder it runs in: OUT_DIR, or a node-local
+# folder. That folder holds links to the transcriptome and the gene map and a samples file with full read paths.
+# Paths are relative to the run folder. abundance_start sets RUN, LOG, OUT and WORK and goes to WORK.
+# abundance_finish removes the links and the samples file and, with a node-local folder, copies the rest to
+# OUT_DIR. After an error the files go to OUT_DIR too.
 
 abundance_start() {
   ABUNDANCE_RULE=$1
@@ -79,7 +72,6 @@ abundance_on_failure() {
 }
 
 abundance_finish() {
-  # the links and the samples file serve only this rule
   rm -f transcriptome.fasta transcriptome.gene_trans_map samples_trimmed.txt
   if [ -n "$LOCAL_ROOT" ]; then
     local size start

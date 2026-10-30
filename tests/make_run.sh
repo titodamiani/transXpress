@@ -1,12 +1,7 @@
 #!/bin/bash
-# Makes a T1 run folder: the test data, a samples file and a config.yaml.
-# Usage: tests/make_run.sh <folder> <assembler> <db_dir>
-#   folder     the new run folder, directly inside the repository folder. Run the pipeline there:
-#              snakemake --profile ../profiles/local (or another profile in profiles/)
-#   assembler  rnaspades or trinity
-#   db_dir     a database folder made by the download_databases target (see README.md)
-# SignalP and TargetP are off (signalp "" and targetp ""), and Trinity runs Inchworm on one thread,
-# so that two runs of the same folder give the same transcripts.
+# Makes a T1 run folder directly inside the clone: tests/make_run.sh <folder> <assembler> <db_dir>
+# SignalP and TargetP are off, and Trinity runs Inchworm on one thread, so two runs give the same transcripts.
+# README.md "Tests"; CONTRIBUTING.md "Tests".
 set -euo pipefail
 folder=$1
 assembler=$2

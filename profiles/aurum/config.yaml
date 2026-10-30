@@ -1,23 +1,17 @@
-# Snakemake profile for the Aurum cluster (IOCB Prague): profiles/slurm plus the Aurum settings.
-# Run from the folder of the clone, in a run folder, with the snakemake9 env active:
-#   snakemake --profile profiles/aurum -d runs/<name>
-# aurum.md in the project folder describes the env.
+# Aurum cluster (IOCB Prague): profiles/slurm plus the Aurum settings. aurum.md in the project folder describes the env.
+# Run from the clone, with the snakemake9 env active: snakemake --profile profiles/aurum -d runs/<name>
 
 executor: slurm
-# The rule envs come from the main image (MAIN_IMAGE in workflow/Snakefile). apptainer also runs SignalP
-# and TargetP from their images when signalp_container or targetp_container is set.
+# The rule envs come from the main image (MAIN_IMAGE in workflow/Snakefile); apptainer also runs SignalP and TargetP from their images.
 software-deployment-method:
   - conda
   - apptainer
-# The main image: Snakemake keeps it in this folder as <md5 of the MAIN_IMAGE URL>.simg. When the file is
-# missing, the main job pulls it from ghcr.io, so pull it first in a Slurm job (aurum.md).
+# The image is <md5 of the MAIN_IMAGE URL>.simg in this folder. Pull it first, in a Slurm job.
 apptainer-prefix: /uochb/soft/users/titodamiani/images/transxpress
-# Apptainer here binds only $HOME, /tmp and the run folder. A job in an image also reads the workflow
-# scripts and the adapters of the clone, the shared databases (all under /uochb/people/titodamiani), the
-# reads (under /uochb/project/pluskal_group) and its temporary files in $SCRATCH (under /scratch).
+# Bind what a job in the image reads: scratch, the clone with the shared databases, the reads.
 apptainer-args: "--bind /scratch,/uochb/people/titodamiani,/uochb/project/pluskal_group"
 snakefile: ../../workflow/Snakefile
-# the rule envs of a run with conda alone (--software-deployment-method conda), shared by all runs
+# Rule envs of a run with conda alone, shared by all runs.
 conda-prefix: /uochb/soft/users/titodamiani/conda-envs/snakemake/transxpress
 jobs: 50
 max-jobs-per-timespan: "1/1s"
@@ -28,11 +22,10 @@ rerun-incomplete: true
 default-resources:
   # One CPU generation (AMD EPYC 9654), so two runs give the same assembly
   constraint: "'gen-d'"
-  # On d001 $SCRATCH is in RAM
+  # $SCRATCH is in RAM on d001
   slurm_extra: "'--exclude=d001'"
 
 # A --config on the command line replaces this list, so add scratch=SCRATCH to it.
 config:
-  # The heavy rules work in the job's folder on the node's local disk, $SCRATCH. The name goes without
-  # its $, because the sbatch line passes it through a shell, which would put in the main job's folder.
+  # Without the $: the sbatch line passes the value through a shell.
   scratch: "SCRATCH"

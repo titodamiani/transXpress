@@ -1,14 +1,12 @@
-# The download rules exist only when db_dir is "resources/db", so a run never writes to a shared
-# database folder. A shared folder is filled once with the download_databases target.
+# The download rules exist only with db_dir "resources/db", so a run never writes to a shared folder.
 if not DB_SHARED:
 
   localrules: download_databases
 
   rule download_sprot:
     """
-    Downloads the Swiss-Prot release named by sprot_release, checks its md5 and prepares it for BLAST.
-    UniProt serves only the newest release as a plain fasta file. An older release comes from the
-    release archive, which holds the same fasta file.
+    Downloads the Swiss-Prot release of sprot_release, checks its md5 and makes the BLAST database.
+    UniProt serves only the newest release as a fasta file; an older release comes from the release archive.
     """
     output:
       fasta="resources/db/uniprot_sprot.fasta",
@@ -30,12 +28,11 @@ if not DB_SHARED:
       """
       db=$(dirname {output.fasta})
 
-      # the release that UniProt serves as current
       current_release() {{
         wget -q -O - "{params.current_url}/reldate.txt" | awk '$1 == "UniProtKB/Swiss-Prot" && $2 == "Release" {{ print $3 }}'
       }}
 
-      # the md5 that the RELEASE.metalink file in folder $1 gives for file $2
+      # md5 of file $2 in the RELEASE.metalink of folder $1
       metalink_md5() {{
         wget -q -O - "$1/RELEASE.metalink" | awk -v name="$2" '/<file name=/ {{ f = index($0, "\\"" name "\\"") > 0 }} f && !found && /type="md5"/ {{ split($0, a, /[<>]/); print a[3]; found = 1 }}'
       }}
@@ -84,7 +81,7 @@ if not DB_SHARED:
 
   rule download_pfam:
     """
-    Downloads the Pfam release named by pfam_release, checks its md5 and prepares it for hmmscan.
+    Downloads the Pfam release of pfam_release, checks its md5 and presses it for hmmscan.
     """
     output:
       hmm="resources/db/Pfam-A.hmm",
@@ -120,8 +117,7 @@ if not DB_SHARED:
 
   rule download_rfam:
     """
-    Downloads the Rfam release named by rfam_release and prepares it for cmscan.
-    Rfam publishes no checksum, so the file is not checked.
+    Downloads the Rfam release of rfam_release and presses it for cmscan. Rfam publishes no checksum.
     """
     output:
       cm="resources/db/Rfam.cm",
@@ -150,9 +146,8 @@ if not DB_SHARED:
 
   rule download_busco_lineage:
     """
-    Downloads the BUSCO lineage named by lineage into resources/db/busco_downloads, for a shared database
-    folder. A run with db_dir "resources/db" does not read this copy: BUSCO downloads its own lineage
-    into resources/busco_downloads.
+    Downloads the BUSCO lineage into resources/db/busco_downloads, for a shared database folder. A run with
+    db_dir "resources/db" lets BUSCO download its own copy into resources/busco_downloads.
     """
     output:
       directory(f"resources/db/busco_downloads/lineages/{LINEAGE}")
@@ -176,8 +171,8 @@ if not DB_SHARED:
 
   rule download_databases:
     """
-    Downloads the annotation databases and the BUSCO lineage into resources/db/ and lists their releases
-    in resources/db/versions.txt. Run it once in an empty folder to fill a shared database folder.
+    Downloads the databases and the BUSCO lineage into resources/db/ and lists their releases in versions.txt.
+    Run it once in an empty folder to fill a shared database folder.
     """
     input:
       versions=["resources/db/uniprot_sprot.version", "resources/db/Pfam-A.version", "resources/db/Rfam.version"],

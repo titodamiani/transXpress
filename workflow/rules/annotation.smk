@@ -1,5 +1,5 @@
-# The three sequence sets that the annotation tools read: the transcripts (fasta), the long ORFs (orfs)
-# and the proteins of both ORF sets (pep). The extension of a chunk file is the name of its set.
+# The sequence sets the annotation tools read: transcripts (fasta), long ORFs (orfs), proteins of both ORF sets (pep).
+# The extension of a chunk file is the name of its set.
 ANNOTATION_SPLIT_INPUT = {
   "fasta": "results/summary/transcriptome.fasta",
   "orfs": "results/transdecoder/transcriptome.orfs",
@@ -10,8 +10,7 @@ wildcard_constraints:
 
 checkpoint fasta_split:
   """
-  Splits the transcriptome.fasta, the transcriptome.orfs or the transcriptome_both_sets.pep into smaller files so
-  they can be processed (annotated) in parallel.
+  Splits a sequence set into chunks of annotation_chunk_<set> sequences.
   """
   input:
     lambda wildcards: ANNOTATION_SPLIT_INPUT[wildcards.split]
@@ -75,8 +74,7 @@ rule rfam_parallel:
     runtime="4h"
   shell:
     """
-    # The tool writes {output}.part. The chunk gets its name only when the file ends with the "# [ok]" line
-    # of a finished cmscan, so a job that is killed or hangs leaves no cut file under the name Snakemake trusts.
+    # {output}.part gets the chunk name only when cmscan finished (AGENTS.md "Traps")
     rm -f {output}.part
     cmscan -E {params.evalue} --rfam --cpu {threads} --tblout {output}.part {input[db]} {input[fasta]} &> {log}
     source {workflow.basedir}/scripts/tools.sh
@@ -106,12 +104,10 @@ rule pfam_parallel:
     runtime="4h"
   shell:
     """
-    # The tool writes {output}.part. The chunk gets its name only when the file ends with the "# [ok]" line
-    # of a finished hmmscan, so a job that is killed or hangs leaves no cut file under the name Snakemake trusts.
+    # {output}.part gets the chunk name only when hmmscan finished (AGENTS.md "Traps")
     rm -f {output}.part
-    # Transdecoder requires --domtblout output.
-    # One thread: with more, the width of the name column of --domtblout can change from run to run, and the
-    # chunk takes as long (test of 3 chunks, 3 runs each: cpu 1 / cpu 2 = 0.99 to 1.02).
+    # TransDecoder reads --domtblout. One thread: with more, the width of the name column changes from run to run,
+    # and the chunk takes as long (cpu 1 / cpu 2 = 0.99 to 1.02).
     hmmscan -E {params.evalue} --cpu {threads} --domtblout {output}.part {input[db]} {input[fasta]} &> {log}
     source {workflow.basedir}/scripts/tools.sh
     publish_part {output} {log}
@@ -140,9 +136,7 @@ rule sprot_blastp_parallel:
     runtime="4h"
   shell:
     """
-    # The tool writes {output}.part. The chunk gets its name only when blastp has ended without an error
-    # (-outfmt 6 has no end line to check), so a job that is killed or hangs leaves no cut file under the name
-    # Snakemake trusts.
+    # {output}.part gets the chunk name only after a clean exit (-outfmt 6 has no end line to check)
     rm -f {output}.part
     blastp -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {params.evalue} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output}.part &> {log}
     mv {output}.part {output}
@@ -171,9 +165,7 @@ rule sprot_blastx_parallel:
     runtime=config["sprot_blastx_runtime"]
   shell:
     """
-    # The tool writes {output}.part. The chunk gets its name only when blastx has ended without an error
-    # (-outfmt 6 has no end line to check), so a job that is killed or hangs leaves no cut file under the name
-    # Snakemake trusts.
+    # {output}.part gets the chunk name only after a clean exit (-outfmt 6 has no end line to check)
     rm -f {output}.part
     blastx -query {input[fasta]} -db {input[db]} -num_threads {threads} -evalue {params.evalue} -max_hsps 1 -max_target_seqs 1 -outfmt "6 std stitle" -out {output}.part &> {log}
     mv {output}.part {output}
@@ -212,8 +204,7 @@ rule signalp_parallel:
     "results/annotation/chunks/signalp/{index}.out"
   log:
     "logs/signalp_parallel/{index}.log"
-  # the image of the signalp_container key, or the conda env "signalp" when the key is "". No env when the tool
-  # is off, so snakemake --containerize, which cannot put a named env in an image, takes the rule.
+  # the image of signalp_container, or the conda env "signalp". No env when the tool is off (--containerize cannot take a named env).
   conda:
     None if SIGNALP_CONTAINER or not SIGNALP_ORGANISM else "signalp"
   container:
@@ -227,13 +218,11 @@ rule signalp_parallel:
     runtime="4h"
   shell:
     """
-    # Snakemake sets TMPDIR to the job's temporary folder, see job_tmpdir
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/signalp.XXXXXX")
     trap 'rm -rf "$TMP"' EXIT
     echo "work folder: $TMP" &> {log}
     signalp6 --fastafile {input} --organism {params.organism} --output_dir $TMP/out --format none --mode fast &>> {log}
-    # The temporary folder can be on another disk than the run folder, so the move there is a copy. The copy goes
-    # to {output}.part, and the rename gives the chunk its name only when the copy is whole.
+    # the move from the temporary folder can be a copy, so the chunk gets its name only after it
     rm -f {output}.part
     mv $TMP/out/prediction_results.txt {output}.part
     mv {output}.part {output}
@@ -251,8 +240,7 @@ rule targetp_parallel:
     "results/annotation/chunks/targetp/{index}.out"
   log:
     "logs/targetp_parallel/{index}.log"
-  # the image of the targetp_container key, or the conda env "targetp" when the key is "". No env when the tool
-  # is off, so snakemake --containerize, which cannot put a named env in an image, takes the rule.
+  # the image of targetp_container, or the conda env "targetp". No env when the tool is off (--containerize cannot take a named env).
   conda:
     None if TARGETP_CONTAINER or not TARGETP_ORGANISM else "targetp"
   container:
@@ -266,16 +254,14 @@ rule targetp_parallel:
     runtime="4h"
   shell:
     """
-    # targetp writes its result into the folder it runs in, which is the job's temporary folder
-    # (Snakemake sets TMPDIR, see job_tmpdir)
+    # targetp writes its result into the folder it runs in
     RUN=$(pwd)
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/targetp.XXXXXX")
     trap 'rm -rf "$TMP"' EXIT
     echo "work folder: $TMP" &> "$RUN/{log}"
     cd $TMP
     targetp -fasta "$RUN/{input}" -format short -org {params.organism} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
-    # The temporary folder can be on another disk than the run folder, so the move there is a copy. The copy goes
-    # to {output}.part, and the rename gives the chunk its name only when the copy is whole.
+    # the move from the temporary folder can be a copy, so the chunk gets its name only after it
     rm -f "$RUN/{output}.part"
     mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}.part" &>> "$RUN/{log}"
     mv "$RUN/{output}.part" "$RUN/{output}"
@@ -284,8 +270,7 @@ rule targetp_parallel:
 
 rule write_summaries:
   """
-  Puts annotations in the headers of the transcripts and of the proteins of
-  each ORF set.
+  Puts the annotations in the headers of the transcripts and of the proteins of each ORF set.
   """
   input:
     transcriptome="results/summary/transcriptome.fasta",

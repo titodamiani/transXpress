@@ -2,7 +2,7 @@ import pandas as pd
 
 input, output = snakemake.input, snakemake.output
 
-# The FastQC modules that the trimming can change, and their titles in the report
+# FastQC modules that trimming can change
 MODULES = {
   "per_base_sequence_quality": "PER BASE SEQUENCE QUALITY",
   "per_sequence_quality_scores": "PER SEQUENCE QUALITY SCORES",

@@ -47,7 +47,7 @@ def hmmer_hits(path, columns, id_column, name_column, evalue_column):
   return hits
 
 with open(log[0], "w") as log_handle:
-  # transcript ID to "<sample>=<TMM> <sample>=<TMM> ...", the TPM scaled across the libraries with TMM
+  # transcript ID to "<sample>=<TMM> ...", the TMM-scaled TPM
   print("Loading expression values from", input["expression"], file=log_handle)
   expression_annotations = {}
   with open(input["expression"]) as input_handle:

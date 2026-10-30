@@ -1,22 +1,12 @@
-# Snakemake profile for a Slurm cluster, with snakemake-executor-plugin-slurm.
-# Run from the folder of the clone, in a run folder: snakemake --profile profiles/slurm -d runs/<name>
-#
-# Each rule gives its threads and its mem_mb and runtime resources. config.yaml sets them for the
-# rules whose size follows the dataset. The plugin turns them into the sbatch flags --cpus-per-task,
-# --mem and --time, and the cluster picks the partition from them.
-#
-# Flags that belong to one cluster go in a copy of this folder, see profiles/aurum:
-#   default-resources: constraint, slurm_partition, slurm_account, slurm_extra (all jobs)
-#   set-resources: the same for one rule
-# A text value there needs two pairs of quotes, for example slurm_extra: "'--exclude=node1'".
-# slurm_extra cannot hold a flag that the plugin sets itself, such as --constraint or --time.
+# Slurm cluster, with snakemake-executor-plugin-slurm. Run from the clone: snakemake --profile profiles/slurm -d runs/<name>
+# Site flags (constraint, slurm_partition, slurm_account, slurm_extra) go in a copy of this folder, see profiles/aurum
+# and README.md "Configuration". A text value needs two pairs of quotes: slurm_extra: "'--exclude=node1'".
+# slurm_extra cannot hold a flag the plugin sets itself (--constraint, --time, --mem, --partition, --cpus-per-task).
 
 executor: slurm
 software-deployment-method: conda
-# Snakemake turns a path that exists next to this file into an absolute path, so the profile works with any -d folder
+# Snakemake turns a path that exists next to this file into an absolute path, so the profile works with any -d folder.
 snakefile: ../../workflow/Snakefile
-# At most this many jobs in the queue at once, and at most one submission per second, so a run of
-# thousands of jobs does not flood the scheduler.
 jobs: 50
 max-jobs-per-timespan: "1/1s"
 latency-wait: 60

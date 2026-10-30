@@ -15,10 +15,10 @@ with open(input[0], "r") as input_handle:
       filename = os.path.join(output[0], "%d.%s" % (count // params.chunk_size + 1, params.extension))
       output_handle = open(filename, "w")
 
-    # the stop codons (*) at the ends of the proteins go, because some annotation tools reject them
+    # some annotation tools reject the stop codon (*) at the end of a protein
     if params.strip_stop:
       record.seq = record.seq.strip("*")
-    # the headers keep only the sequence ID, because some tools copy the description into their output
+    # only the sequence ID stays in the header: some tools copy the description into their output
     record.description = ""
     Bio.SeqIO.write(record, output_handle, "fasta")
     count += 1

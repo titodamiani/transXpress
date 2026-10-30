@@ -104,7 +104,7 @@ rule trinity_DE:
   Runs Trinity script to perform differential expression analysis using edgeR.
   """
   input:
-    samples=config["samples_file"],
+    samples=checked_samples_file,
     expression="results/expression/kallisto/kallisto.gene.counts.matrix"
   output:
     directory("results/expression/edger")

@@ -45,7 +45,8 @@ rule trimmomatic_parallel:
     """
     # record the computer this ran on
     ( hostname ; grep -m1 "model name" /proc/cpuinfo 2>/dev/null || uname -m ; nproc 2>/dev/null || true ) > {log}
-    read SAMPLE REPLICATE F_READS R_READS < {input}
+    # read returns 1 for a last line without a newline, which split copies as it is
+    read SAMPLE REPLICATE F_READS R_READS < {input} || [ -n "$SAMPLE" ]
     # an empty line of the samples file gives an empty marker
     if [ -z "$REPLICATE" ]; then
       touch {output}

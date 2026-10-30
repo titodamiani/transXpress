@@ -229,6 +229,7 @@ rule signalp_parallel:
     """
     # Snakemake sets TMPDIR to the job's temporary folder, see job_tmpdir
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/signalp.XXXXXX")
+    trap 'rm -rf "$TMP"' EXIT
     echo "work folder: $TMP" &> {log}
     signalp6 --fastafile {input} --organism {params.organism} --output_dir $TMP/out --format none --mode fast &>> {log}
     # The temporary folder can be on another disk than the run folder, so the move there is a copy. The copy goes
@@ -236,7 +237,6 @@ rule signalp_parallel:
     rm -f {output}.part
     mv $TMP/out/prediction_results.txt {output}.part
     mv {output}.part {output}
-    rm -r $TMP
     """
 
 
@@ -270,6 +270,7 @@ rule targetp_parallel:
     # (Snakemake sets TMPDIR, see job_tmpdir)
     RUN=$(pwd)
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/targetp.XXXXXX")
+    trap 'rm -rf "$TMP"' EXIT
     echo "work folder: $TMP" &> "$RUN/{log}"
     cd $TMP
     targetp -fasta "$RUN/{input}" -format short -org {params.organism} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
@@ -278,8 +279,6 @@ rule targetp_parallel:
     rm -f "$RUN/{output}.part"
     mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}.part" &>> "$RUN/{log}"
     mv "$RUN/{output}.part" "$RUN/{output}"
-    cd "$RUN"
-    rm -r $TMP
     """
 
 

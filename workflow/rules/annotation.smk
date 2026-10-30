@@ -40,7 +40,7 @@ rule annotation_merge:
   output:
     "results/annotation/{task}_{split}.out"
   log:
-    "logs/annotation_merge_{split}/{task}.log"
+    "logs/annotation_merge_{split}_{task}.log"
   threads:
     1
   resources:

@@ -35,7 +35,7 @@ transXpress/
    - Image mode (`profiles/aurum`): Apptainer runs each rule in the main image. Pull it once (about 5 GB, and `mksquashfs` needs a lot of memory, so pull in a cluster job):
      ```bash
      IMAGES=/path/to/images
-     URL=docker://ghcr.io/titodamiani/transxpress:1.0.0    # MAIN_IMAGE in workflow/Snakefile
+     URL=docker://ghcr.io/titodamiani/transxpress:1.0.1    # MAIN_IMAGE in workflow/Snakefile
      apptainer pull "$IMAGES/$(printf %s "$URL" | md5sum | cut -d ' ' -f 1).simg" "$URL"
      ```
      In the profile: `software-deployment-method: [conda, apptainer]`, `apptainer-prefix: /path/to/images` and `apptainer-args: "--bind <clone>,<databases>,<reads>"` (a job sees only the run folder and the bound folders). `profiles/aurum/config.yaml` is an example.

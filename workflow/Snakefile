@@ -2,7 +2,7 @@
 
 # The image with the conda env of every rule (Dockerfile, built by image.yml). A change to an env file or to the
 # Dockerfile needs another tag here (CONTRIBUTING.md "The main image").
-MAIN_IMAGE = "docker://ghcr.io/titodamiani/transxpress:1.0.0"
+MAIN_IMAGE = "docker://ghcr.io/titodamiani/transxpress:1.0.1"
 containerized: MAIN_IMAGE
 
 include: "rules/common.smk"

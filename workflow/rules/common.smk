@@ -224,11 +224,14 @@ def main_image_file():
 rule run_info:
   """
   Records the computer of the main job and of the assembly job, the transXpress commit, the images, the
-  database releases and the version of each tool. It runs after the assembly and BUSCO, which it reads.
+  database releases and md5 sums and the version of each tool. It runs after the assembly and BUSCO, which it reads.
   """
   input:
     transcriptome="results/summary/transcriptome.fasta",
-    busco="results/summary/busco_report.txt"
+    busco="results/summary/busco_report.txt",
+    pfam=f"{DB_DIR}/Pfam-A.hmm",
+    rfam=f"{DB_DIR}/Rfam.cm",
+    sprot=f"{DB_DIR}/uniprot_sprot.fasta"
   output:
     "results/summary/run_info.txt"
   params:

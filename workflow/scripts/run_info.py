@@ -1,5 +1,6 @@
 import datetime
 import glob
+import hashlib
 import json
 import os
 import platform
@@ -149,6 +150,13 @@ with open("logs/%s.log" % config["assembler"]) as handle:
 with open(input["busco"]) as handle:
   busco_dataset = next((line.split(":", 1)[1].strip() for line in handle if line.startswith("# The lineage dataset is:")), "unknown")
 
+def md5_of(path):
+  digest = hashlib.md5()
+  with open(path, "rb") as handle:
+    for block in iter(lambda: handle.read(1 << 20), b""):
+      digest.update(block)
+  return digest.hexdigest()
+
 with open(output[0], "w") as out:
   out.write("host\t%s\n" % socket.gethostname())
   out.write("cpu\t%s\n" % cpu)
@@ -167,6 +175,9 @@ with open(output[0], "w") as out:
   out.write("rfam_release\t%s\n" % config["rfam_release"])
   out.write("sprot_release\t%s\n" % config["sprot_release"])
   out.write("busco_dataset\t%s\n" % busco_dataset)
+  # md5 of the database files the annotation reads: the folder may hold another release than config.yaml names
+  for key in ["pfam", "rfam", "sprot"]:
+    out.write("%s_md5\t%s\n" % (key, md5_of(input[key])))
   out.write("deployment\t%s\n" % params.deployment)
   out.write("image\t%s\n" % params.image)
   out.write("image_file\t%s\n" % (image_info(params.image_file) if params.image else ""))

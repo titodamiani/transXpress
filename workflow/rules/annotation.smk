@@ -79,8 +79,8 @@ rule rfam_parallel:
     # of a finished cmscan, so a job that is killed or hangs leaves no cut file under the name Snakemake trusts.
     rm -f {output}.part
     cmscan -E {params.evalue} --rfam --cpu {threads} --tblout {output}.part {input[db]} {input[fasta]} &> {log}
-    tail -n 1 {output}.part | grep -qx '# \\[ok\\]' || {{ echo "{output}.part does not end with # [ok]" >> {log}; exit 1; }}
-    mv {output}.part {output}
+    source {workflow.basedir}/scripts/tools.sh
+    publish_part {output} {log}
     """
 
 
@@ -113,8 +113,8 @@ rule pfam_parallel:
     # One thread: with more, the width of the name column of --domtblout can change from run to run, and the
     # chunk takes as long (test of 3 chunks, 3 runs each: cpu 1 / cpu 2 = 0.99 to 1.02).
     hmmscan -E {params.evalue} --cpu {threads} --domtblout {output}.part {input[db]} {input[fasta]} &> {log}
-    tail -n 1 {output}.part | grep -qx '# \\[ok\\]' || {{ echo "{output}.part does not end with # [ok]" >> {log}; exit 1; }}
-    mv {output}.part {output}
+    source {workflow.basedir}/scripts/tools.sh
+    publish_part {output} {log}
     """
 
 

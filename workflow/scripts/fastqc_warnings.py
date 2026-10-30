@@ -141,9 +141,3 @@ with open(output["warning_file"], "w") as out_file:
     else:
       out_file.write('ok\n')
   out_file.write('source: https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/\n')
-
-# print to stdout
-with open(output["warning_file"], "r") as out_file:
-  for line in out_file.readlines():
-    print(line.strip())
-  print('See this output in: ' + output["warning_file"])

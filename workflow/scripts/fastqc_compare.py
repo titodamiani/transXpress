@@ -26,9 +26,3 @@ with open(output["result"], "w") as out_file:
     # a line of 6 spaces separates the two stages in the report
     out_file.write(f"**{title}**\nBefore trimming:\n{counts(before[module].tolist())}      \n"
       f"After trimming:\n{counts(after[module].tolist())}{'-' * 50}\n")
-
-# print the results also in the terminal
-with open(output["result"], "r") as out_file:
-  for line in out_file.readlines():
-    print(line.strip())
-  print("See this output in " + output["result"])

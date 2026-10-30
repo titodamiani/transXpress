@@ -135,7 +135,8 @@ rule trinity_stats:
     runtime="4h"
   shell:
     """
-    TRINITY_HOME=$(python -c 'import os;import shutil;TRINITY_EXECUTABLE_PATH=shutil.which("Trinity");print(os.path.dirname(os.path.join(os.path.dirname(TRINITY_EXECUTABLE_PATH), os.readlink(TRINITY_EXECUTABLE_PATH))))')
+    source {workflow.basedir}/scripts/tools.sh
+    TRINITY_HOME=$(trinity_home)
     # contig_ExN50_statistic.pl reads the genes in Perl hash order, which is random in each run, and
     # genes tied on expression keep that order. A fixed Perl hash seed gives the same order in each run.
     export PERL_HASH_SEED=0

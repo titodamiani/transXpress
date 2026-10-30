@@ -4,28 +4,12 @@
 Usage: compare_runs.py RUN_A RUN_B [--allowed tests/allowed_diffs.tsv] [--quiet]
        compare_runs.py RUN_A RUN_B --sequences results/summary/transcriptome.fasta
 
-Every file under RUN_A/results must exist in RUN_B/results, and the other way round.
-Two files match when their bytes match. A gzip file matches when its decompressed bytes match.
-Before the comparison, two paths are replaced in the content, because many tools write the folder
-they ran in: the absolute path of each run folder becomes "@RUN@", the node-local work folder of
-a job (/scratch/slurm_jobs/<user>/<job id>/transxpress.<random>) becomes "@SCRATCH@", and the folder of
-a Snakemake conda env (<conda prefix>/<hash> on the host, /conda-envs/<hash> in the main image)
-becomes "@ENV@". The hash of an env folder on the host covers the path of the conda prefix, so it
-differs from the hash in the image for the same env.
-
-A file that differs passes only when a line of the allowed-diffs file names it. Each line has
-three tab-separated fields: a path pattern (fnmatch, relative to the run folder, "*" also
-matches "/"), a mode, and the reason the file may differ. The mode is one of:
-  skip         the file may differ in any way, or exist in one run only
-  strip:REGEX  the file matches after the lines that REGEX matches are dropped from both
-  sorted:REGEX the file matches after the lines that REGEX matches are dropped, each run of spaces
-               is one space, and the lines are sorted, in both
-Lines that start with "#" and empty lines are comments.
-
+Two files match when their bytes match (a gzip file: its decompressed bytes), after the run folder, the
+node-local work folder and the conda env folder in the content become @RUN@, @SCRATCH@ and @ENV@.
+A file that differs passes only when a line of the allowed-diffs file names it: pattern, mode (skip,
+strip:REGEX, sorted:REGEX), reason, separated by tabs. See CONTRIBUTING.md, section "Tests".
+With --sequences only the sorted sequences of that fasta file are compared.
 Exit code 0: every file matches or is allowed to differ. 1: a file differs, or is in one run only.
-
-With --sequences FASTA, only that fasta file of each run is compared: the sorted sequences, without
-the headers. Exit code 0 when the two sets of sequences are the same.
 """
 import argparse
 import collections

@@ -1,6 +1,6 @@
 rule transdecoder_longorfs:
   """
-  Runs first stage of Transdecoder extracting the long open reading frames.
+  TransDecoder.LongOrfs: the long ORFs.
   """
   input:
     transcriptome="results/summary/transcriptome.fasta",
@@ -17,13 +17,12 @@ rule transdecoder_longorfs:
     runtime="4h"
   shell:
     """
-    # LongOrfs names its folder after the file name of the transcriptome
     TD_DIR=results/transdecoder/longorfs/$(basename {input.transcriptome}).transdecoder_dir
-    # LongOrfs skips a step when its checkpoint file exists, so a rerun starts from an empty folder
+    # LongOrfs skips a step whose checkpoint file exists, so a rerun starts from an empty folder
     rm -rf $TD_DIR &> {log}
-    # A fixed Perl hash seed gives the same output order in each run
+    # a fixed Perl hash seed makes the output order repeatable
     export PERL_HASH_SEED=0
-    # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
+    # the stage scripts are in util/ beside the TransDecoder wrapper
     TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
     $TD_UTIL/TransDecoder.LongOrfs -t {input.transcriptome} --output_dir results/transdecoder/longorfs &>> {log}
     cp -p $TD_DIR/longest_orfs.pep {output.orfs} &>> {log}
@@ -32,23 +31,12 @@ rule transdecoder_longorfs:
 
 rule transdecoder_predict:
   """
-  Runs second stage of Transdecoder predicting the likely coding regions based
-  on Pfam and SwissProt hits. Saves the proteins (.pep), the coding sequences
-  (.cds), and the ORF positions on the transcripts (.gff3, .bed). It runs for
-  two ORF sets:
-  all_orfs keeps every ORF that Predict accepts, so a transcript can give
-  several proteins.
-  single_best_orf runs with --single_best_only. It keeps one ORF per transcript,
-  picked by Pfam or SwissProt hit first and by length second.
+  TransDecoder.Predict with the Pfam and Swiss-Prot hits: .pep, .cds, .gff3, .bed for two ORF sets.
+  all_orfs keeps every accepted ORF. single_best_orf (--single_best_only) keeps one ORF per transcript.
 
-  Predict skips a step when its checkpoint file exists, and the checkpoint name
-  does not include --single_best_only. So each ORF set runs on its own copy of
-  the LongOrfs folder, without the checkpoints of an earlier Predict run. The
-  copy is deleted when the four files are saved.
-
-  Predict reads the ORFs of one transcript in Perl hash order, which is random
-  in each run. A fixed hash seed gives the same output order and the same pick
-  among tied ORFs in each run.
+  The checkpoint name does not include --single_best_only, so each set runs on its own copy of the
+  LongOrfs folder without Predict checkpoints. A fixed Perl hash seed makes the output order and the pick
+  among tied ORFs repeatable.
   """
   input:
     transcriptome="results/summary/transcriptome.fasta",
@@ -78,12 +66,12 @@ rule transdecoder_predict:
     """
     rm -rf {params.workdir} &> {log}
     mkdir -p {params.workdir} &>> {log}
-    # Predict and LongOrfs name their files after the file name of the transcriptome
+    # both stages name their files after the transcriptome file
     NAME=$(basename {input.transcriptome})
     cp -rp results/transdecoder/longorfs/$NAME.transdecoder_dir {params.workdir}/ &>> {log}
     rm -rf {params.workdir}/$NAME.transdecoder_dir/__checkpoints_TDpredict &>> {log}
     export PERL_HASH_SEED=0
-    # TransDecoder 6 keeps the stage scripts in util/ next to the TransDecoder wrapper, outside bin/
+    # the stage scripts are in util/ beside the TransDecoder wrapper
     TD_UTIL=$(dirname $(readlink -f $(command -v TransDecoder)))/util
     $TD_UTIL/TransDecoder.Predict -t {input.transcriptome} --output_dir {params.workdir} --retain_pfam_hits {input.pfam} --retain_blastp_hits {input.blastp} {params.single_best} &>> {log}
     cp -p {params.workdir}/$NAME.transdecoder.pep {output.pep} &>> {log}
@@ -96,7 +84,7 @@ rule transdecoder_predict:
 
 rule summary_peps:
   """
-  Copies the proteins of both ORF sets to the summary folder.
+  Copies the proteins of both ORF sets to results/summary.
   """
   input:
     expand("results/transdecoder/transcriptome_{orf_set}.pep", orf_set=["all_orfs", "single_best_orf"])
@@ -118,9 +106,8 @@ rule summary_peps:
 
 rule orf_sets_pep:
   """
-  Joins the proteins of both ORF sets into one file, so that TMHMM, SignalP and TargetP
-  read each protein once. The single_best_orf set holds proteins that the all_orfs set
-  lacks. A protein ID that has two different sequences in the two sets stops the rule.
+  Joins the proteins of both ORF sets, so TMHMM, SignalP and TargetP read each protein once.
+  A protein ID with two different sequences in the sets stops the rule.
   """
   input:
     all_orfs="results/transdecoder/transcriptome_all_orfs.pep",

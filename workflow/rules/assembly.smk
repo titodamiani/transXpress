@@ -1,13 +1,11 @@
 rule trinity:
   """
-  Runs the whole Trinity assembly in one job. When the scratch key names a variable that is set in
-  this job, Trinity works in a folder on the node's local disk, and only the assembly and its gene
-  map come to the run folder.
+  Runs the Trinity assembly in one job, on the node-local disk when the scratch variable is set.
   """
   input:
     samples="results/trimmomatic/samples_trimmed.txt"
   output:
-    # Trinity writes these two beside its output folder, not inside it
+    # Trinity writes these two beside its output folder
     transcriptome="results/assembly/trinity.Trinity.fasta",
     gene_trans_map="results/assembly/trinity.Trinity.fasta.gene_trans_map"
   log:
@@ -23,8 +21,7 @@ rule trinity:
   resources:
     mem_mb=gb_to_mb(config["trinity_memory"]),
     runtime=config["trinity_runtime"]
-  # The common failures here are memory and time. A retry asks for the same figures and starts from the
-  # beginning, so it would fail the same way, after hours on a large node.
+  # a retry asks for the same memory and time and fails the same way
   retries: 0
   shell:
     """
@@ -32,16 +29,14 @@ rule trinity:
     source {workflow.basedir}/scripts/tools.sh
     record_host > {log}
 
-    # Trinity writes one folder per read cluster in read_partitions, which can reach millions of files.
-    # On the local disk they never reach the run folder. A failed run copies nothing back: the files are
-    # the ones to keep off the shared disk, and Trinity's messages are in {log}. Without the local disk,
-    # Trinity works in results/assembly/trinity, and a rerun after a failure continues from Trinity's own
-    # checkpoints there. --full_cleanup deletes the work folder after a successful assembly.
+    # read_partitions can hold millions of files, so Trinity works on the local disk and a failed run copies nothing back.
+    # Without it, Trinity works in results/assembly/trinity and a rerun continues from its checkpoints.
+    # --full_cleanup deletes the work folder after a successful assembly.
     TRINITY_OUT=results/assembly/trinity
     source {workflow.basedir}/scripts/scratch.sh
     scratch_start "{params.scratch_var}" {log} stop
     if [ -n "$LOCAL_ROOT" ]; then
-      # Trinity accepts only an output folder with "trinity" in its name
+      # Trinity wants "trinity" in the name of the output folder
       TRINITY_OUT=$WORK/trinity
     fi
 
@@ -58,8 +53,7 @@ rule trinity:
 
 rule rnaspades:
   """
-  Runs rnaSPAdes assembly. rnaSPAdes writes three transcript sets, and
-  rnaspades_filter in config.yaml picks the one that becomes transcriptome.fasta.
+  Runs rnaSPAdes. It writes three transcript sets, and rnaspades_filter picks the one that becomes transcriptome.fasta.
   """
   input:
     samples="results/trimmomatic/samples_trimmed.yaml",
@@ -80,8 +74,7 @@ rule rnaspades:
   resources:
     mem_mb=gb_to_mb(config["rnaspades_memory"]),
     runtime=config["rnaspades_runtime"]
-  # The common failures here are memory and time. A retry asks for the same figures and starts from the
-  # beginning, so it would fail the same way, after hours on a large node.
+  # a retry asks for the same memory and time and fails the same way
   retries: 0
   shell:
     """
@@ -89,9 +82,7 @@ rule rnaspades:
     source {workflow.basedir}/scripts/tools.sh
     record_host > {log}
 
-    # rnaSPAdes writes about 100 GB of working files on a large dataset. When the scratch key names a
-    # variable that is set in this job, it works in a folder on the node's local disk, and its output
-    # folder is copied to the run folder at the end. Otherwise it works in the run folder.
+    # about 100 GB of working files on a large dataset: work on the local disk and copy the output folder back
     OUT=results/assembly/rnaspades
     SPADES_OUT=$OUT
     source {workflow.basedir}/scripts/scratch.sh
@@ -105,13 +96,13 @@ rule rnaspades:
       SPADES_OUT=$WORK/rnaspades
     fi
 
-    # No --checkpoints: Slurm deletes the local folder when the job ends, so a restart point would not survive
+    # No --checkpoints: Slurm deletes the local folder at the end of the job
     rnaspades.py --dataset {input.samples} -t {threads} -m $(( {resources.mem_mb} / 1024 )) -o "$SPADES_OUT" {params.strand_specific} --only-assembler {params.kmers} &>> {log}
 
     if [ "$SPADES_OUT" != "$OUT" ]; then
       SIZE=$(du -sh "$WORK" | cut -f1)
       START=$(date +%s)
-      # replace the whole folder, so no file of an earlier failed run stays beside the new assembly
+      # replace the whole folder, so no file of an earlier failed run stays
       rm -rf "$OUT" &>> {log}
       cp -rp "$SPADES_OUT" "$(dirname "$OUT")/" &>> {log}
       echo "copied $SIZE from $WORK to $OUT in $(( $(date +%s) - START )) s" &>> {log}
@@ -121,19 +112,13 @@ rule rnaspades:
 
 rule transcriptome_copy:
   """
-  Copies the assembled transcriptome to the transxpress directory, with its
-  gene to transcript map. Trinity writes the map. For rnaSPAdes the rule builds
-  it from the transcript names: NODE_97_length_6237_cov_11.98_g8_i2 is isoform 2
-  of gene g8, so the map line is "g8<TAB>NODE_97_length_6237_cov_11.98_g8_i2".
-  A name without _g<N>_i<M> at its end stops the rule. Trinity writes the
-  same transcripts in another order in each run, so the copy of a Trinity
-  assembly holds them sorted by name in natural order (TRINITY_DN2 before
-  TRINITY_DN10), and its gene map follows that order.
+  Copies the assembly to results/summary with its gene to transcript map. Trinity writes the map. For
+  rnaSPAdes the map comes from the names: NODE_97_length_6237_cov_11.98_g8_i2 is gene g8; a name without
+  _g<N>_i<M> at its end stops the rule. The Trinity copy is sorted by name in natural order (TRINITY_DN2
+  before TRINITY_DN10), because Trinity writes the records in another order in each run.
 
-  This is its own rule, and not the end of rnaspades or trinity, for two reasons.
-  A rule that fails has its outputs deleted by Snakemake, so a failed name check
-  here must not delete an assembly that took hours. And a change of
-  rnaspades_filter reruns only this rule, not the assembly.
+  A rule of its own, so a failed name check does not delete an assembly (Snakemake deletes the outputs of a
+  failed rule) and a change of rnaspades_filter reruns only this rule.
   """
   input:
     unpack(transcriptome_copy_input)

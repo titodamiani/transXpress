@@ -118,10 +118,8 @@ def main_env_versions():
     versions[meta["name"]] = "%s=%s" % (meta["version"], meta["build"])
   return versions
 
-# The tools of each env file, at the versions of its pin file for this platform. The rule envs are
-# built from the pin files, in the conda prefix or in the main image. default.yaml is the main env,
-# which runs Snakemake and the rules without an env of their own. An env file with a name: is a
-# named env, which the run does not build (signalp, targetp).
+# The tools of each env file at the versions of its pin file. default.yaml is the main env. An env file with
+# a name: line (signalp, targetp) is a named env that the run does not build.
 platform_name = {("Linux", "x86_64"): "linux-64", ("Linux", "aarch64"): "linux-aarch64",
   ("Darwin", "x86_64"): "osx-64", ("Darwin", "arm64"): "osx-arm64"}.get((platform.system(), platform.machine()), "")
 envs_dir = os.path.join(basedir, "envs")

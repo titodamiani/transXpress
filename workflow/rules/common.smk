@@ -10,38 +10,31 @@ min_version("9.27.0")
 
 configfile: "config.yaml"
 
-# tmhmm.py 1.2.1 imports numpy in its setup.py, so pip builds it in envs/tmhmm.yaml against the numpy of
-# that env, without an isolated build env. Snakemake passes this variable to conda when it builds the env.
+# tmhmm.py 1.2.1 imports numpy in its setup.py, so pip must build it without an isolated build env.
 os.environ.setdefault("PIP_NO_BUILD_ISOLATION", "0")
 
 validate(config, os.path.join(workflow.basedir, "schemas", "config.schema.yaml"), set_default=True)
 
 def gb_to_mb(gb):
   """
-  The mem_mb resource for a memory figure of config.yaml, which is in GB. Slurm reads the --mem value
-  in MB of 1024 KB, so 1 GB is 1024 MB here.
+  The mem_mb resource for a memory figure of config.yaml in GB (1 GB is 1024 MB, as Slurm reads --mem).
   """
   return int(float(gb) * 1024)
 
-# The releases of the annotation databases. The download rules fetch exactly these releases.
 PFAM_RELEASE = config["pfam_release"]
 RFAM_RELEASE = config["rfam_release"]
 SPROT_RELEASE = config["sprot_release"]
 
-# The isoform expression matrix that ExN50 and the annotated FASTA headers read: the TPM of each transcript,
-# scaled across the libraries with TMM. The ExN50 page of the Trinity wiki uses the TMM matrix.
+# The TMM-scaled TPM of each transcript, which ExN50 and the annotated FASTA headers read.
 TMM_ISOFORM = "results/summary/expr_tmm_isoform.tsv"
 
-# The rnaSPAdes transcript set that becomes transcriptome.fasta. rnaSPAdes always writes all three.
 RNASPADES_FILTER = config["rnaspades_filter"]
 
-# The organism groups of SignalP and TargetP. "" turns the tool off.
-# A key with no value reaches here as None, which means "" too
+# Organism groups of SignalP and TargetP. "" or an empty key turns the tool off.
 SIGNALP_ORGANISM = config["signalp"] or ""
 TARGETP_ORGANISM = config["targetp"] or ""
 
-# The Apptainer images of SignalP and TargetP. "" runs the tool in its conda env. A rule with an image
-# has no conda env, because Snakemake would activate the conda env inside the image.
+# The image of SignalP or TargetP, "" for the conda env. A rule with an image has no conda env.
 def tool_container(key, organism):
   path = config[key] or ""
   if not path or not organism:
@@ -56,30 +49,24 @@ def tool_container(key, organism):
 SIGNALP_CONTAINER = tool_container("signalp_container", SIGNALP_ORGANISM)
 TARGETP_CONTAINER = tool_container("targetp_container", TARGETP_ORGANISM)
 
-# The number of sequences in each annotation chunk. Each chunk is one cluster job for each tool that reads it.
 ANNOTATION_CHUNK = {split: config[f"annotation_chunk_{split}"] for split in ["fasta", "orfs", "pep"]}
 
-# The environment variable that holds a node-local folder in a cluster job, for example "$SCRATCH" or
-# "SCRATCH". "" runs every rule in the run folder. The heavy rules read the variable with bash, inside
-# the job, because only the job knows its value.
+# The environment variable that holds the node-local folder. The heavy rules read it with bash inside the job.
 SCRATCH = config["scratch"] or ""
 SCRATCH_VAR = SCRATCH.lstrip("$")
 
 def job_tmpdir(wildcards):
   """
-  The temporary folder of a job: the folder in the variable that the scratch key names, or the
-  system default when the key is "" or the variable is not set. Snakemake calls this inside the job.
+  The temporary folder of a job: the folder in the scratch variable, or the system default. Snakemake calls this inside the job.
   """
   return os.environ.get(SCRATCH_VAR) or tempfile.gettempdir()
 
-# The folder of the annotation databases. "resources/db" keeps one copy in each run folder, which the
-# pipeline downloads. Any other folder is a shared copy that the pipeline only reads.
+# "resources/db" is downloaded into the run folder. Any other db_dir is a shared copy that is only read.
 DB_DIR = config["db_dir"].rstrip("/")
 DB_SHARED = DB_DIR != "resources/db"
 LINEAGE = config["lineage"] or ""
 
-# The annotation rules run only after the fasta_split checkpoints, hours into a run, so a
-# shared folder is checked here, before any job starts.
+# Annotation starts hours into a run, so a shared folder is checked before the first job.
 if DB_SHARED:
   if not LINEAGE:
     raise ValueError("A shared db_dir needs a named BUSCO lineage, for example lineage: \"viridiplantae_odb12\"")
@@ -97,10 +84,8 @@ if DB_SHARED:
 @functools.lru_cache(maxsize=None)
 def check_samples(path):
   """
-  Checks the samples file before any job starts. Every line that is not empty has 3 columns (sample,
-  replicate and one reads file) or 4 columns (a second reads file), separated by white space. A replicate
-  name appears once, and every reads file exists. The file has two or more libraries, because the TMM
-  normalization of the expression needs them.
+  Checks the samples file before any job starts: 3 or 4 columns on each non-empty line, unique replicate
+  names, existing reads files, two or more libraries (TMM needs them).
   """
   if not os.path.isfile(path):
     raise WorkflowError("The samples file %s does not exist. samples_file in config.yaml names it." % path)
@@ -120,7 +105,6 @@ def check_samples(path):
       for reads in fields[2:]:
         if not os.path.isfile(reads):
           problems.append("line %d: the reads file %s does not exist" % (number, reads))
-  # The TMM normalization of the expression needs two or more libraries
   if len(replicates) < 2:
     problems.append("it has %d libraries, and it needs 2 or more" % len(replicates))
   if problems:
@@ -137,7 +121,7 @@ def trimmomatic_completed_parallel_jobs(wildcards):
   The marker files of the trimmomatic_parallel jobs, one for each line of the samples file.
   """
   parallel_dir = checkpoints.trimmomatic_split.get(**wildcards).output[0]
-  # sorted, because glob_wildcards returns the folder order, which differs between runs
+  # sorted: glob_wildcards returns the folder order, which differs between runs
   job_ids = sorted(glob_wildcards(os.path.join(parallel_dir, "sample_{job_index}")).job_index)
   return expand(os.path.join(parallel_dir, "completed_{job_index}"), job_index=job_ids)
 
@@ -151,11 +135,8 @@ def transcriptome_copy_input(wildcards):
 
 def abundance_strand_option():
   """
-  The strand option of align_and_estimate_abundance.pl. With Trinity, strand_specific is already a
-  Trinity option, for example "--SS_lib_type RF". With rnaSPAdes, "--ss rf" and "--ss fr" become
-  "--SS_lib_type RF" and "--SS_lib_type FR", and "" (unstranded reads) gives no option. Any other value
-  stops the run before the first job: rnaSPAdes takes only rf and fr, and a value that is not one of
-  them would make the expression estimates run as if the reads had no strand.
+  The strand option of align_and_estimate_abundance.pl. Trinity: strand_specific as it is. rnaSPAdes:
+  "--ss rf" and "--ss fr" become "--SS_lib_type RF" and "FR", "" gives none, anything else stops the run.
   """
   if config["assembler"] == "rnaspades":
     options = {"": "", "--ss rf": "--SS_lib_type RF", "--ss fr": "--SS_lib_type FR"}
@@ -185,9 +166,7 @@ def parallel_annotation_tasks(wildcards):
 # These rules run in the main job, not as cluster jobs
 localrules: all, clean, delete_intermediates, run_info, trimmomatic_split, trimmomatic_merge, samples_yaml_conversion, transcriptome_copy, summary_peps, orf_sets_pep, compare_qc_after_trim, fastqc_before_trim_warnings, IGV
 
-# A rule with a wildcard keeps its logs in logs/<rule>/, and the wildcard is only in the file name.
-# The cluster writes its own log next to the rule log before the job starts, and not every cluster
-# makes a missing folder, so every log folder is made here.
+# The cluster writes its log into the log folder before the job starts, and not every cluster makes the folder.
 onstart:
   for workflow_rule in workflow.rules:
     for log_file in workflow_rule.log:
@@ -197,8 +176,7 @@ onstart:
 
 rule clean:
   """
-  Not run by default. Deletes the results and the logs of the run, so the next run starts from the
-  beginning. Keeps config.yaml, the samples file, resources/ and .snakemake/.
+  Not run by default. Deletes results/ and logs/. Keeps config.yaml, the samples file, resources/ and .snakemake/.
   """
   threads:
     1
@@ -213,9 +191,8 @@ rule clean:
 
 rule delete_intermediates:
   """
-  Not run by default. Deletes the large working files that no rule names as its output, so every
-  result stays and a later snakemake run in this folder has nothing to do: the trimmed reads and the
-  kallisto, bowtie2 and RSEM indexes.
+  Not run by default. Deletes the trimmed reads and the kallisto, bowtie2 and RSEM indexes, which no rule names
+  as output, so a later run has nothing to do.
   """
   threads:
     1
@@ -226,34 +203,30 @@ rule delete_intermediates:
     """
     rm -f results/trimmomatic/trimmed_reads/*.fastq.gz
     rm -f results/expression/kallisto/transcriptome.fasta.kallisto_idx
-    # the bowtie2.ok marker goes with the index, so a later align_reads run builds the index again
+    # the bowtie2.ok marker goes with the index
     rm -f results/expression/bowtie2_rsem/transcriptome.fasta.bowtie2.* results/expression/bowtie2_rsem/transcriptome.fasta.RSEM.*
     """
 
 
-# The software deployment methods of the run, for example "apptainer conda"
 DEPLOYMENT = " ".join(sorted(method.name.lower().replace("_", "-")
   for method in workflow.deployment_settings.deployment_method))
 
 def main_image_file():
   """
-  The image file of MAIN_IMAGE that apptainer runs: Snakemake keeps it as <md5 of the URL>.simg in the
-  apptainer prefix, .snakemake/singularity by default.
+  The image file of MAIN_IMAGE: <md5 of the URL>.simg in the apptainer prefix.
   """
   prefix = workflow.deployment_settings.apptainer_prefix or os.path.join(".snakemake", "singularity")
   return os.path.join(str(prefix), hashlib.md5(MAIN_IMAGE.encode()).hexdigest() + ".simg")
 
 rule run_info:
   """
-  Records the computer the pipeline ran on, the transXpress commit, the images and the version of each
-  tool. The assembly depends on the hardware, the assembler version and the thread count, so a later run
-  can be compared against this one.
+  Records the computer of the main job, the transXpress commit, the images and the version of each tool.
   """
   output:
     "results/summary/run_info.txt"
   params:
     deployment=DEPLOYMENT,
-    # the rule envs come from the main image only when apptainer is a deployment method
+    # the rule envs come from the image only with apptainer
     image=MAIN_IMAGE if DeploymentMethod.APPTAINER in workflow.deployment_settings.deployment_method else "",
     image_file=main_image_file(),
     signalp_container=SIGNALP_CONTAINER,

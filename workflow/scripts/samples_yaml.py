@@ -4,8 +4,7 @@ import re
 
 input, output = snakemake.input, snakemake.output
 
-# rnaSPAdes reads a relative path in this file from the folder of the file, so each read path is
-# written relative to that folder
+# rnaSPAdes reads a relative path from the folder of this file
 yaml_dir = os.path.dirname(output["samples_yaml"])
 sample_list = []
 with open(input["samples_txt"], "r") as input_handle:

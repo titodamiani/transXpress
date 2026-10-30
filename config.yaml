@@ -1,152 +1,72 @@
-# Input file with seq reads, ex.
-#                                        cond_A    cond_A_rep1    A_rep1_left.fq    A_rep1_right.fq
-#                                        cond_A    cond_A_rep2    A_rep2_left.fq    A_rep2_right.fq
-#                                        cond_B    cond_B_rep1    B_rep1_left.fq    B_rep1_right.fq
-#                                        cond_B    cond_B_rep2    B_rep2_left.fq    B_rep2_right.fq
-# Note: must avoid spaces in filenames in samples.txt
+# Config of a run. Copy this file into runs/<name>/. Types and defaults: workflow/schemas/config.schema.yaml.
+# README.md, section "Configuration", explains the keys.
+
+# The samples file: condition, replicate name, left reads, right reads (none for single-end).
 samples_file: "samples.txt"
 
-# trimmomatic is used for both trinity and rnaSPAdes. {adapters} is the adapter file in resources/.
+# Trimmomatic steps. {adapters} is resources/adapters.fasta.
 trimmomatic_parameters: "ILLUMINACLIP:{adapters}:2:30:10 SLIDINGWINDOW:4:5 LEADING:5 TRAILING:5 MINLEN:25"
 
-# set to trinity or rnaspades
+# trinity or rnaspades.
 assembler: "trinity"
 
-# Node-local disk. On a cluster, the rules rnaspades, trinity, kallisto, align_reads and busco work
-# in a folder on the node's own disk, and copy their files to the run folder when they end. Every
-# other job keeps its temporary files there too. This keeps the working files off the shared
-# network storage. rnaspades, trinity, kallisto and align_reads stop when the folder is in memory.
-# Give the environment variable that holds that folder in a cluster job, for example "$SCRATCH" or
-# "$TMPDIR". Pick one that is on a disk: on some clusters $TMPDIR is in memory.
-# In a profile or with --config, write the name without the $, for example "SCRATCH": Snakemake
-# passes that value to each cluster job through a shell, which would put in the folder of the main job.
-# "" runs every rule in the run folder.
+# Environment variable that holds the node-local folder of a cluster job, for example "$SCRATCH". "" works in the run folder.
+# In a profile or with --config write it without the $ (SCRATCH).
 scratch: ""
 
-# may consider canging TRINITY_PARAMS += "  --min_kmer_cov 1 --min_glue 2  --no_normalize_reads"
+# Extra Trinity options.
 trinity_parameters: "--seqType fq"
 
-# set the organism (plant or non-plant) for targetp: pl or non-pl
+# TargetP organism group: pl or non-pl. "" turns TargetP off.
 targetp: "non-pl"
 
-# set the organism group for SignalP: "eukarya" for eukaryotes, "other" for bacteria and archaea
+# SignalP organism group: eukarya or other. "" turns SignalP off.
 signalp: "eukarya"
 
-# SignalP 6 and TargetP 2 have a DTU licence, so each licensee installs them. Each tool runs either in a
-# conda env with that name ("signalp", "targetp") or in an Apptainer image built from containers/*.def.
-# A path to a .sif runs the tool in that image, and needs apptainer in the software-deployment-method of
-# the profile. "" uses the conda env.
+# Path of a .sif image of SignalP or TargetP. "" runs the tool in the conda env of that name.
 signalp_container: ""
 targetp_container: ""
 
-# Strand-specific RNA-Seq read orientation.
-#
-# For Trinity assembler use
-# if paired: RF or FR, (dUTP method = RF)
-# if single: F or R.   
-#
-# This parameter is used for both Trinity and read alignment steps
-#
-# For example:
-# strand_specific: "--SS_lib_type RF"
-#
-# For rnaSPAdes assembler use
-# if paired: fr (normal) or rf (antisense)
-# For example:
-# strand_specific: "--ss rf"
+# Read strand. Trinity: "--SS_lib_type RF" (paired RF or FR, single F or R). rnaSPAdes: "--ss rf" or "--ss fr". "" is unstranded.
 strand_specific: ""
 
-# Only for rnaSPAdes assembler:
-# By default rnaSPAdes selects 2 kmer sizes, approximately 1/3 and 1/2 of read length.
-# kmers: ""
-
-# Only for rnaSPAdes assembler:
-# rnaSPAdes writes three transcript sets. Each one removes transcripts that are short or have low
-# read coverage, with stricter cutoffs from soft to hard. This key picks the set that becomes
-# transcriptome.fasta. The other two stay in results/assembly/rnaspades/.
-# "default": transcripts.fasta, the set the SPAdes manual recommends without a specific need.
-# "hard": hard_filtered_transcripts.fasta, only long transcripts with rather high expression.
-# "soft": soft_filtered_transcripts.fasta, also short, low expressed transcripts, likely to hold junk.
+# rnaSPAdes only: the transcript set that becomes transcriptome.fasta: default, hard (long, well expressed) or soft (also short, low expressed).
 rnaspades_filter: "default"
-#
-# You can also choose different kmer sizes
-# !!! all values must be odd, less than 128 and listed in ascending order !!!
-# For example:
-# kmers: "-k 21,33,55"
-#
-# Different sources give different recommendations for the k-mer sizes, so there is no definite recommendation.
-#
-# Recommendations by rnaSPAdes (Source: Using SPAdes De Novo Assembler https://pubmed.ncbi.nlm.nih.gov/32559359/)
-# 150 bp reads: 21,33,55 (kmers: "-k 21,33,55")
-# 150 bp - 249 bp: 21,33,55,77 (kmers: "-k 21,33,55,77")
-# 250 bp: 21,33,55,77,99,127 (kmers: "-k 21,33,55,77,99,127")
-# You can also use single kmer size but it is not recommended by rnaSPAdes. (kmers: "-k 47")
+
+# rnaSPAdes only: k-mer sizes, odd, below 128, ascending, for example "-k 21,33,55". "" lets rnaSPAdes choose.
 kmers: ""
 
-# Can be used for species name etc
+# Text put before each sequence name in the annotated files.
 annotated_fasta_prefix: ""
 
-# For pfam, rfam, and blast searches
+# E-value limit of the Pfam, Rfam and BLAST searches.
 e_value_threshold: "1e-6"
 
-# Dispersion value for edgeR differential expression analysis 
-# https://github.com/trinityrnaseq/trinityrnaseq/wiki/Trinity-Differential-Expression#identifying-de-features-no-biological-replicates-proceed-with-caution
-# See more about information about dispersion in edgeR manual http://www.bioconductor.org/packages/release/bioc/manuals/edgeR/man/edgeR.pdf
+# edgeR dispersion for a pair of conditions where a condition has one replicate.
 dispersion: "0.1"
 
-# BUSCO lineage
-# The assesed lineage is automatically chosen by BUSCO.
-# If you want to use specified lineage you can change this parameter
-# by specifying the lineage.
-# For example:
-# lineage: "eudicots_odb10"
-# You can list all possible lineages by running "busco --list-datasets"
+# BUSCO lineage, for example "eudicots_odb10" (busco --list-datasets). "" lets BUSCO choose.
 lineage: "viridiplantae_odb12"
 
-# Folder of the annotation databases and the BUSCO lineage.
-# "resources/db" keeps one copy in each run folder, which the pipeline downloads.
-# Any other folder is a shared copy that the pipeline only reads.
-# See "Annotation databases" in README.md.
+# Database folder. "resources/db" is downloaded into the run folder. Any other folder is a shared copy that is only read.
 db_dir: "resources/db"
 
-# Releases of the annotation databases. Keep the quotes.
-# Pfam releases: https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/
-# Rfam releases: https://ftp.ebi.ac.uk/pub/databases/Rfam/
-# Swiss-Prot releases: https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/
+# Database releases. Keep the quotes.
 pfam_release: "38.2"
 rfam_release: "15.1"
 sprot_release: "2026_03"
 
-# TransDecoder saves two ORF sets (open reading frames, the stretches read as proteins), each as proteins (.pep),
-# coding sequences (.cds) and ORF positions on the transcripts (.gff3, .bed): transcriptome_all_orfs.* and
-# transcriptome_single_best_orf.*. The annotation reads both sets.
-# all_orfs: every ORF that TransDecoder.Predict accepts. A transcript can give several proteins.
-# single_best_orf: one ORF per transcript, picked by Pfam or SwissProt hit first and by length second.
-
-# The number of sequences in each annotation chunk. Each tool runs one cluster job per chunk, and each
-# job reads the whole database, so larger chunks mean fewer jobs and fewer database reads.
-# fasta: the transcripts, for rfam and blastx. A chunk of 1000 takes blastx up to about 2.5 h.
-# orfs: the long ORFs, for pfam and blastp. pep: the proteins, for tmhmm, signalp and targetp.
-# A chunk of 5000 takes each of these tools about 1 h.
+# Sequences in each annotation job: transcripts (rfam, blastx), long ORFs (pfam, blastp), proteins (tmhmm, signalp, targetp).
 annotation_chunk_fasta: 1000
 annotation_chunk_orfs: 5000
 annotation_chunk_pep: 5000
 
-# Memory in GB, the thread count and the time limit of the rules whose size follows the dataset.
-# The values here suit about 420 million read pairs, which is 18 Illumina libraries.
-# Lower them for a smaller dataset. A rule that works on one annotation chunk
-# keeps its size in its rule file, because that size holds at any dataset size.
-# sprot_blastx_parallel is the exception: its time follows annotation_chunk_fasta.
-# Keep the assembler thread count the same across runs you want to compare. The
-# assembly depends on it.
-# A time limit is a number of minutes or a text such as "30m", "12h" or "7d". On a cluster
-# with a maintenance window, set the long ones below the time left, for example with
-# --set-resources rnaspades:runtime=10h on the snakemake command line.
+# Memory (GB), threads and time limit (minutes, or "30m", "12h", "7d") of the rules that grow with the data.
+# The values suit about 420 million read pairs (18 libraries). Keep the assembler threads the same in runs that you compare.
 rnaspades_memory: "400"
 rnaspades_threads: 32
 rnaspades_runtime: "1d"
-# Trinity runs in one job. The Trinity guide gives about 1 GB per million read
-# pairs. This figure follows that rule of thumb and is not measured.
+# About 1 GB per million read pairs (Trinity guide); not measured.
 trinity_memory: "450"
 trinity_threads: 32
 trinity_runtime: "7d"
@@ -162,6 +82,7 @@ busco_runtime: "4h"
 transdecoder_predict_memory: "6"
 transdecoder_predict_threads: 1
 transdecoder_predict_runtime: "4h"
+# Time follows annotation_chunk_fasta.
 sprot_blastx_memory: "2"
 sprot_blastx_threads: 4
 sprot_blastx_runtime: "12h"

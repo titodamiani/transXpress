@@ -1,9 +1,7 @@
 name: test
 
-# T1 (the small test data in tests/) through the whole pipeline, twice for each assembler, then a
-# comparison of the two runs with tests/compare_runs.py and tests/allowed_diffs.tsv.
-# The annotation databases come from the download_databases target at the pinned releases and stay
-# in the Actions cache, keyed by the release numbers.
+# T1 through the whole pipeline, twice for each assembler, then tests/compare_runs.py (CONTRIBUTING.md "Tests").
+# The databases come from download_databases at the pinned releases and stay in the Actions cache.
 
 on:
   push:
@@ -40,8 +38,7 @@ jobs:
         shell: bash -el {0}
         run: |
           mkdir -p db-fill
-          # the release numbers go into config.yaml in quotes: Snakemake reads a --config value such as 38.2
-          # or 2026_03 as a number, and the config schema wants text
+          # quotes: Snakemake reads a --config value such as 38.2 as a number, and the schema wants text
           sed -e "s/^pfam_release:.*/pfam_release: \"$PFAM_RELEASE\"/" \
               -e "s/^rfam_release:.*/rfam_release: \"$RFAM_RELEASE\"/" \
               -e "s/^sprot_release:.*/sprot_release: \"$SPROT_RELEASE\"/" config.yaml > db-fill/config.yaml
@@ -105,8 +102,7 @@ jobs:
             t1-${{ matrix.assembler }}-*/logs
             t1-${{ matrix.assembler }}-*/.snakemake/log
 
-  # T1 with rnaSPAdes once with the rule envs from conda and once with the rule envs from the main image
-  # (MAIN_IMAGE in workflow/Snakefile, built and pushed by image.yml), then tests/compare_runs.py.
+  # T1 with rnaSPAdes in conda mode and in image mode, then tests/compare_runs.py
   image:
     uses: ./.github/workflows/image.yml
     permissions:
@@ -143,7 +139,7 @@ jobs:
           conda-remove-defaults: true
       - name: Install Apptainer
         run: |
-          # the release package of Apptainer, the version on Aurum
+          # the Apptainer version of Aurum
           wget -q https://github.com/apptainer/apptainer/releases/download/v1.5.2/apptainer_1.5.2_amd64.deb
           echo "b5ea4ddbb7db2bfd396b4e64adaedb75d990fc7efd851189472899a1bd521d89  apptainer_1.5.2_amd64.deb" | sha256sum -c
           sudo apt-get update -q
@@ -169,8 +165,7 @@ jobs:
           echo "image: ${{ needs.image.outputs.image }}"
           tests/make_run.sh t1-image rnaspades "$GITHUB_WORKSPACE/db-fill/resources/db"
           cd t1-image
-          # the jobs in the image read the workflow scripts, the adapters and the databases, which are
-          # outside the run folder
+          # the jobs in the image read the scripts, the adapters and the databases outside the run folder
           snakemake --profile ../profiles/local --software-deployment-method conda apptainer \
             --apptainer-prefix "$GITHUB_WORKSPACE/images" --apptainer-args "--bind $GITHUB_WORKSPACE" --cores 4
           grep -E '^(deployment|image|image_file)\b' results/summary/run_info.txt

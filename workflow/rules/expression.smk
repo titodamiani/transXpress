@@ -1,8 +1,6 @@
 rule align_reads:
   """
-  Not run by default.
-  Runs Trinity script aligning the reads to the transcriptome using Bowtie2
-  and estimating the abundance with RSEM.
+  Not run by default. Aligns the reads to the transcriptome with Bowtie2 and estimates abundance with RSEM.
   """
   input:
     samples="results/trimmomatic/samples_trimmed.txt",
@@ -23,24 +21,22 @@ rule align_reads:
   resources:
     mem_mb=gb_to_mb(config["align_reads_memory"]),
     runtime=config["align_reads_runtime"]
-  # The common failures here are memory and time. A retry asks for the same figures and starts from the
-  # beginning, so it would fail the same way, after hours on a large node.
+  # a retry asks for the same memory and time and fails the same way
   retries: 0
   shell:
     """
-    # abundance_start (scripts/scratch.sh) works in the tool folder {params.out_dir}, or on the node's
-    # local disk when the scratch key names a variable that is set in this job
+    # abundance_start (scripts/scratch.sh) works in {params.out_dir}, or on the local disk when the scratch variable is set
     source {workflow.basedir}/scripts/scratch.sh
     abundance_start align_reads "{params.scratch_var}" {log} {params.out_dir} {input.transcriptome} {input.gene_trans_map} {input.samples}
 
-    # Remove old markers so the aligner runs again on the trimmed reads.
+    # remove old markers so the aligner runs again
     for rep in $(awk '{{print $2}}' samples_trimmed.txt); do rm -f "$rep/bowtie2.bam.ok"; done
 
     source {workflow.basedir}/scripts/tools.sh
     TRINITY_HOME=$(trinity_home)
     $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {params.strand} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method RSEM --aln_method bowtie2 --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
 
-    # for_rsem.bam is a large temporary copy of the alignment. Nothing reads it later.
+    # for_rsem.bam is a large temporary copy
     for rep in $(awk '{{print $2}}' samples_trimmed.txt); do rm -f "$rep/bowtie2.bam.for_rsem.bam"; done
 
     abundance_finish
@@ -49,12 +45,10 @@ rule align_reads:
 
 rule prepare_samples_for_IGV:
   """
-  Not run by default.
-  Prepares the bam alignment files to be used by IGV by sorting
-  them into results/expression/bowtie2_rsem/igv and indexing them.
+  Not run by default. Sorts and indexes the BAM files for IGV in results/expression/bowtie2_rsem/igv.
   """
   input:
-    # align_reads writes one bowtie2.bam per replicate, and names only its marker as the output
+    # align_reads names only its marker as output
     "results/expression/bowtie2_rsem/transcriptome.fasta.bowtie2.ok"
   params:
     alignment="results/expression/bowtie2_rsem/{sample}/bowtie2.bam"
@@ -79,8 +73,7 @@ rule prepare_samples_for_IGV:
 
 rule IGV:
   """
-  Not run by default.
-  Rule to be called to get all bowtie alignments ready for IGV.
+  Not run by default. Makes all alignments ready for IGV.
   """
   input:
     get_igv,
@@ -102,7 +95,7 @@ rule IGV:
 
 rule trinity_DE:
   """
-  Runs Trinity script to perform differential expression analysis using edgeR.
+  Differential expression with edgeR (Trinity script).
   """
   input:
     samples=checked_samples_file,
@@ -125,16 +118,14 @@ rule trinity_DE:
     source {workflow.basedir}/scripts/tools.sh
     TRINITY_HOME=$(trinity_home)
 
-    # run_DE_analysis.pl estimates the dispersion for each pair of samples in which both samples have
-    # more than one replicate, and uses --dispersion for a pair in which a sample has one replicate
+    # the dispersion is estimated for pairs where both conditions have replicates; --dispersion covers the others
     $TRINITY_HOME/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix {input.expression} --method edgeR --output {output} --samples_file {input.samples} --dispersion {params.dispersion} &> {log}
     """
 
 
 rule kallisto:
   """
-  Runs Trinity script to perform transcript expression quantification
-  using Kallisto.
+  Transcript quantification with kallisto (Trinity script).
   """
   input:
     samples="results/trimmomatic/samples_trimmed.txt",
@@ -161,28 +152,24 @@ rule kallisto:
   resources:
     mem_mb=gb_to_mb(config["kallisto_memory"]),
     runtime=config["kallisto_runtime"]
-  # The common failures here are memory and time. A retry asks for the same figures and starts from the
-  # beginning, so it would fail the same way, after hours on a large node.
+  # a retry asks for the same memory and time and fails the same way
   retries: 0
   shell:
     """
     source {workflow.basedir}/scripts/tools.sh
     TRINITY_HOME=$(trinity_home)
-    # abundance_estimates_to_matrix.pl writes the matrix rows in Perl hash order, which is random
-    # in each run. A fixed Perl hash seed gives the same row order in each run.
+    # abundance_estimates_to_matrix.pl writes rows in Perl hash order; a fixed seed makes it repeatable
     export PERL_HASH_SEED=0
 
-    # abundance_start (scripts/scratch.sh) works in the tool folder {params.out_dir}, or on the node's
-    # local disk when the scratch key names a variable that is set in this job
+    # abundance_start (scripts/scratch.sh) works in {params.out_dir}, or on the local disk when the scratch variable is set
     source {workflow.basedir}/scripts/scratch.sh
     abundance_start kallisto "{params.scratch_var}" {log} {params.out_dir} {input.transcriptome} {input.gene_trans_map} {input.samples}
 
     $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {params.strand} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
 
-    # the matrix columns follow the order of the files on the command line, here the order of the samples file
+    # the columns follow the order of the samples file
     $TRINITY_HOME/util/abundance_estimates_to_matrix.pl --est_method kallisto --name_sample_by_basedir --gene_trans_map transcriptome.gene_trans_map $(awk '{{print $2 "/abundance.tsv"}}' samples_trimmed.txt) &>> "$LOG"
-    # TMM needs two or more libraries. check_samples stops a run with fewer before the first job, so a
-    # missing matrix here is an error.
+    # TMM needs two or more libraries; check_samples stops a run with fewer, so a missing matrix is an error
     for f in kallisto.{{isoform,gene}}.TMM.EXPR.matrix kallisto.{{isoform,gene}}.TPM.not_cross_norm kallisto.{{isoform,gene}}.counts.matrix; do
       if [ ! -f $f ]; then
         echo "$f was not produced" &>> "$LOG"

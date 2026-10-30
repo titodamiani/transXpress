@@ -1,7 +1,6 @@
 checkpoint trimmomatic_split:
   """
-  Splits file with information about all reads files into separate files
-  so they can be processed with trimmomatic in parallel.
+  Splits the samples file into one file for each line.
   """
   input:
     samples=checked_samples_file
@@ -23,7 +22,7 @@ checkpoint trimmomatic_split:
 
 rule trimmomatic_parallel:
   """
-  Processes individual read files with trimmomatic.
+  Trimmomatic on the reads of one line of the samples file.
   """
   input:
     "results/trimmomatic/trimmed_reads/sample_{job_index}"
@@ -34,7 +33,7 @@ rule trimmomatic_parallel:
   conda:
     "../envs/trimmomatic.yaml"
   params:
-    # a function, because Snakemake takes {adapters} in a plain string for a wildcard
+    # a function: in a plain string Snakemake takes {adapters} for a wildcard
     trimmomatic=lambda wildcards: str(config["trimmomatic_parameters"])
   threads:
     8
@@ -48,17 +47,14 @@ rule trimmomatic_parallel:
     record_host > {log}
     # read returns 1 for a last line without a newline, which split copies as it is. Snakemake made the input.
     read SAMPLE REPLICATE F_READS R_READS < {input} || true
-    # an empty line of the samples file gives an empty marker
     if [ -z "$REPLICATE" ]; then
       touch {output}
       exit 0
     fi
-    # {{adapters}} in the trimmomatic parameters stands for the adapter file that ships with transXpress. The
-    # shell fills in its path, so the path of the clone is not a param and a run can go on from another clone.
+    # {{adapters}} stands for resources/adapters.fasta; the shell fills in the path, so a run can go on from another clone
     ADAPTERS=$(cd {workflow.basedir}/../resources && pwd)/adapters.fasta
     TRIMMOMATIC_PARAMETERS='{params.trimmomatic}'
     TRIMMOMATIC_PARAMETERS=${{TRIMMOMATIC_PARAMETERS//'{{adapters}}'/$ADAPTERS}}
-    # the output lines hold the fields separated by one space
     OUT=results/trimmomatic/trimmed_reads/{wildcards.job_index}
     if [ -n "$R_READS" ]; then
       trimmomatic PE -threads {threads} $F_READS $R_READS $OUT.R1-P.qtrim.fastq.gz $OUT.R1-U.qtrim.fastq.gz $OUT.R2-P.qtrim.fastq.gz $OUT.R2-U.qtrim.fastq.gz $TRIMMOMATIC_PARAMETERS &>> {log}
@@ -72,7 +68,7 @@ rule trimmomatic_parallel:
 
 rule trimmomatic_merge:
   """
-  Creates a file with information about all reads files processed with trimmomatic.
+  Lists the trimmed reads of all lines of the samples file.
   """
   input:
     trimmomatic_completed_parallel_jobs
@@ -93,8 +89,7 @@ rule trimmomatic_merge:
 
 rule samples_yaml_conversion:
   """
-  Converts the file with information about all trimmed reads files into a yaml
-  format used by rnaSPAdes.
+  Converts samples_trimmed.txt to the YAML dataset file of rnaSPAdes.
   """
   input:
     samples_txt="results/trimmomatic/samples_trimmed.txt"

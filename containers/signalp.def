@@ -1,10 +1,5 @@
-# SignalP 6.0 fast (signalp6 with distilled_model_signalp6.pt) in a private Apptainer image.
-# The DTU licence forbids sharing SignalP, so the image is for its licensee only.
-# Download "SignalP 6.0 fast" from DTU, unpack it, and give the path of its signalp-6-package folder:
-#
-#   apptainer build --fakeroot --build-arg SIGNALP_PACKAGE=/path/to/signalp-6-package signalp.sif containers/signalp.def
-#
-# Run: apptainer exec signalp.sif signalp6 --fastafile <in.pep> --organism eukarya --output_dir <dir> --format none --mode fast
+# SignalP 6.0 fast in a private Apptainer image. The DTU licence forbids sharing SignalP, so the image is for its licensee only.
+# Build and use: see the README section "SignalP and TargetP".
 
 Bootstrap: docker
 From: condaforge/miniforge3:26.7.2-0

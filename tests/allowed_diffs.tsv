@@ -21,5 +21,5 @@ results/qc/multiqc/*_trim/multiqc_data/multiqc.log	skip	the log holds the tempor
 results/qc/multiqc/*_trim/multiqc_data/multiqc.parquet	skip	a binary file; multiqc_fastqc.txt holds the table
 results/qc/multiqc/*_trim/multiqc_data/multiqc_data.json	strip:"report_creation_date":	the file holds the time of the report
 results/qc/multiqc/*_trim/multiqc_report.html	skip	the report holds a random ID, reportUuid
-results/summary/run_info.txt	strip:^(host|memory_total|transxpress_commit|deployment|image|image_file)\t	the file names the node, its memory, the git commit, the deployment methods and the main image of the run
+results/summary/run_info.txt	strip:^(host|assembly_host|memory_total|transxpress_commit|deployment|image|image_file)\t	the file names the node, its memory, the git commit, the deployment methods and the main image of the run
 results/transdecoder/longorfs/*/__checkpoints_longorfs/pipeliner.*.cmds	skip	the file name holds the process ID

@@ -1,6 +1,8 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 description: The config.yaml of a transXpress run. config.yaml in the repository explains each key.
 type: object
+# a key that is not listed stops the run, so a typo does not fall back to a default
+additionalProperties: false
 
 properties:
   samples_file:

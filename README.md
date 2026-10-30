@@ -35,7 +35,7 @@ transXpress/
    - Image mode (`profiles/aurum`): Apptainer runs each rule in the main image. Pull it once (about 5 GB, and `mksquashfs` needs a lot of memory, so pull in a cluster job):
      ```bash
      IMAGES=/path/to/images
-     URL=docker://ghcr.io/titodamiani/transxpress:1.0.0    # MAIN_IMAGE in workflow/Snakefile
+     URL=docker://ghcr.io/titodamiani/transxpress:1.0.1    # MAIN_IMAGE in workflow/Snakefile
      apptainer pull "$IMAGES/$(printf %s "$URL" | md5sum | cut -d ' ' -f 1).simg" "$URL"
      ```
      In the profile: `software-deployment-method: [conda, apptainer]`, `apptainer-prefix: /path/to/images` and `apptainer-args: "--bind <clone>,<databases>,<reads>"` (a job sees only the run folder and the bound folders). `profiles/aurum/config.yaml` is an example.
@@ -75,7 +75,7 @@ Targets after the profile: a rule or a file (`results/qc/multiqc/before_trim/mul
 
 ## Configuration
 
-`config.yaml` has one comment line per key. `workflow/schemas/config.schema.yaml` gives the type and default of each key, and a wrong type stops the run at the start. Check at least `assembler`, `strand_specific`, `lineage`, `signalp`, `targetp` and the resources.
+`config.yaml` has one comment line per key. `workflow/schemas/config.schema.yaml` gives the type and default of each key, and a wrong type or a key that is not listed stops the run at the start. Check at least `assembler`, `strand_specific`, `lineage`, `signalp`, `targetp` and the resources.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -125,7 +125,7 @@ runs/<name>/results/
 │   ├── expr_{tmm,tpm,counts}_{isoform,gene}.tsv  # TMM-scaled TPM, TPM, estimated counts
 │   ├── transcriptome_stats.txt       # Trinity statistics
 │   ├── busco_report.txt              # BUSCO score
-│   └── run_info.txt                  # host, CPU, commit, images, tool versions
+│   └── run_info.txt                  # main-job and assembly node, commit, images, database releases, tool versions
 ├── annotation/                       # {pfam,sprotblastp}_orfs.out, {rfam,sprotblastx}_fasta.out, {signalp,targetp,tmhmm}_pep.out, chunks/
 ├── transdecoder/                     # transcriptome_{all_orfs,single_best_orf}.{pep,cds,gff3,bed}, longorfs/
 ├── assembly/                         # rnaspades/ or trinity.Trinity.fasta (+ .gene_trans_map)

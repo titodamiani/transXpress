@@ -10,7 +10,7 @@ import subprocess
 import sys
 import uuid
 
-output, config, params = snakemake.output, snakemake.config, snakemake.params
+input, output, config, params = snakemake.input, snakemake.output, snakemake.config, snakemake.params
 # the workflow folder of this clone: the folder above scripts/
 basedir = os.path.dirname(snakemake.scriptdir)
 
@@ -142,6 +142,13 @@ for env_file in sorted(glob.glob(os.path.join(envs_dir, "*.yaml"))):
     name, _, version = spec.partition("==")
     tools.append((env, name, version + "=pip" if version else "not pinned"))
 
+# the first three lines of the assembler log are the host, the processor and the CPU count of the assembly job
+with open("logs/%s.log" % config["assembler"]) as handle:
+  assembly_host, assembly_cpu, assembly_cores = [handle.readline().split(":", 1)[-1].strip() for _ in range(3)]
+
+with open(input["busco"]) as handle:
+  busco_dataset = next((line.split(":", 1)[1].strip() for line in handle if line.startswith("# The lineage dataset is:")), "unknown")
+
 with open(output[0], "w") as out:
   out.write("host\t%s\n" % socket.gethostname())
   out.write("cpu\t%s\n" % cpu)
@@ -153,6 +160,13 @@ with open(output[0], "w") as out:
   out.write("transxpress_commit\t%s\n" % commit)
   out.write("assembler\t%s\n" % config["assembler"])
   out.write("assembler_threads\t%s\n" % config["%s_threads" % config["assembler"]])
+  out.write("assembly_host\t%s\n" % assembly_host)
+  out.write("assembly_cpu\t%s\n" % assembly_cpu)
+  out.write("assembly_cores\t%s\n" % assembly_cores)
+  out.write("pfam_release\t%s\n" % config["pfam_release"])
+  out.write("rfam_release\t%s\n" % config["rfam_release"])
+  out.write("sprot_release\t%s\n" % config["sprot_release"])
+  out.write("busco_dataset\t%s\n" % busco_dataset)
   out.write("deployment\t%s\n" % params.deployment)
   out.write("image\t%s\n" % params.image)
   out.write("image_file\t%s\n" % (image_info(params.image_file) if params.image else ""))

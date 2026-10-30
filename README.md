@@ -75,7 +75,7 @@ Targets after the profile: a rule or a file (`results/qc/multiqc/before_trim/mul
 
 ## Configuration
 
-`config.yaml` has one comment line per key. `workflow/schemas/config.schema.yaml` gives the type and default of each key, and a wrong type stops the run at the start. Check at least `assembler`, `strand_specific`, `lineage`, `signalp`, `targetp` and the resources.
+`config.yaml` has one comment line per key. `workflow/schemas/config.schema.yaml` gives the type and default of each key, and a wrong type or a key that is not listed stops the run at the start. Check at least `assembler`, `strand_specific`, `lineage`, `signalp`, `targetp` and the resources.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -125,7 +125,7 @@ runs/<name>/results/
 │   ├── expr_{tmm,tpm,counts}_{isoform,gene}.tsv  # TMM-scaled TPM, TPM, estimated counts
 │   ├── transcriptome_stats.txt       # Trinity statistics
 │   ├── busco_report.txt              # BUSCO score
-│   └── run_info.txt                  # host, CPU, commit, images, tool versions
+│   └── run_info.txt                  # main-job and assembly node, commit, images, database releases, tool versions
 ├── annotation/                       # {pfam,sprotblastp}_orfs.out, {rfam,sprotblastx}_fasta.out, {signalp,targetp,tmhmm}_pep.out, chunks/
 ├── transdecoder/                     # transcriptome_{all_orfs,single_best_orf}.{pep,cds,gff3,bed}, longorfs/
 ├── assembly/                         # rnaspades/ or trinity.Trinity.fasta (+ .gene_trans_map)

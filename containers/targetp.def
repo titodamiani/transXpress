@@ -1,10 +1,5 @@
-# TargetP 2.0 in a private Apptainer image.
-# The DTU licence forbids sharing TargetP, so the image is for its licensee only.
-# Download TargetP 2.0 from DTU, unpack it, and give the path of its targetp-2.0 folder:
-#
-#   apptainer build --fakeroot --build-arg TARGETP_DIR=/path/to/targetp-2.0 targetp.sif containers/targetp.def
-#
-# Run: apptainer exec targetp.sif targetp -fasta <in.pep> -format short -org <pl|non-pl> -prefix <name>
+# TargetP 2.0 in a private Apptainer image. The DTU licence forbids sharing TargetP, so the image is for its licensee only.
+# Build and use: see the README section "SignalP and TargetP".
 
 Bootstrap: docker
 From: condaforge/miniforge3:26.7.2-0

@@ -154,9 +154,7 @@ with open(output[0], "w") as out:
   out.write("python\t%s\n" % platform.python_version())
   out.write("transxpress_commit\t%s\n" % commit)
   out.write("assembler\t%s\n" % config["assembler"])
-  out.write("assembler_threads\t%s\n" % (
-    config.get("rnaspades_threads", 32) if config["assembler"] == "rnaspades"
-    else config.get("trinity_threads", 32)))
+  out.write("assembler_threads\t%s\n" % config["%s_threads" % config["assembler"]])
   out.write("deployment\t%s\n" % params.deployment)
   out.write("image\t%s\n" % params.image)
   out.write("image_file\t%s\n" % (image_info(params.image_file) if params.image else ""))

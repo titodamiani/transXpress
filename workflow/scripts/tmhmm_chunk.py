@@ -13,7 +13,7 @@ input, output, log = snakemake.input, snakemake.output, snakemake.log
 # The result goes to <chunk>.out.part and gets the name of the chunk only when every sequence is done, so a job
 # that is killed or hangs leaves no cut file under the name Snakemake trusts.
 part_file = output[0] + ".part"
-with open(input[0], "r") as input_handle, open(part_file, "w") as output_handle, open(log[0], "a+") as log_handle, tempfile.TemporaryDirectory(dir=snakemake.resources["tmpdir"]) as tmp_dir:
+with open(input[0], "r") as input_handle, open(part_file, "w") as output_handle, open(log[0], "w") as log_handle, tempfile.TemporaryDirectory(dir=snakemake.resources["tmpdir"]) as tmp_dir:
   log_handle.write("work folder: " + tmp_dir + "\n")
   log_handle.flush()
 

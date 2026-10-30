@@ -4,7 +4,6 @@ input, output = snakemake.input, snakemake.output
 
 # The titles of the FastQC modules in the report
 mapping = {
-"basic_statistics": "BASIC STATISTICS",
 "per_base_sequence_quality": "PER BASE SEQUENCE QUALITY",
 "per_tile_sequence_quality": "PER TILE SEQUENCE QUALITY",
 "per_sequence_quality_scores": "PER SEQUENCE QUALITY SCORES",
@@ -18,8 +17,6 @@ mapping = {
 }
 
 reasons_mapping = {
-"basic_statistics": "BASIC STATISTICS",
-
 "per_base_sequence_quality":
 """A warning is issued if the lower quartile for any base is less than 10, or if the median for any base is less than 25.
 This module will raise a failure if the lower quartile for any base is less than 5 or if the median for any base is less than 20.

@@ -146,7 +146,8 @@ rule kallisto:
   params:
     scratch_var=SCRATCH_VAR,
     out_dir=lambda wildcards, output: os.path.dirname(output.counts),
-    strand=abundance_strand_option()
+    strand=abundance_strand_option(),
+    kallisto_strand=kallisto_strand_option()
   threads:
     config["kallisto_threads"]
   resources:
@@ -165,7 +166,7 @@ rule kallisto:
     source {workflow.basedir}/scripts/scratch.sh
     abundance_start kallisto "{params.scratch_var}" {log} {params.out_dir} {input.transcriptome} {input.gene_trans_map} {input.samples}
 
-    $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {params.strand} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
+    $TRINITY_HOME/util/align_and_estimate_abundance.pl --transcripts transcriptome.fasta {params.strand} {params.kallisto_strand} --seqType fq --samples_file samples_trimmed.txt --prep_reference --thread_count {threads} --est_method kallisto --gene_trans_map transcriptome.gene_trans_map &>> "$LOG"
 
     # the columns follow the order of the samples file
     $TRINITY_HOME/util/abundance_estimates_to_matrix.pl --est_method kallisto --name_sample_by_basedir --gene_trans_map transcriptome.gene_trans_map $(awk '{{print $2 "/abundance.tsv"}}' samples_trimmed.txt) &>> "$LOG"

@@ -83,7 +83,7 @@ Targets after the profile: a rule or a file (`results/qc/multiqc/before_trim/mul
 | `trimmomatic_parameters` | `ILLUMINACLIP:{adapters}:2:30:10 SLIDINGWINDOW:4:5 LEADING:5 TRAILING:5 MINLEN:25` | Trimmomatic steps; `{adapters}` is `resources/adapters.fasta` |
 | `assembler` | `trinity` | `trinity` or `rnaspades` |
 | `trinity_parameters` | `--seqType fq` | extra Trinity options |
-| `strand_specific` | `""` | Trinity: `--SS_lib_type RF` (paired RF or FR, single F or R). rnaSPAdes: `--ss rf` or `--ss fr`. Also used for the read quantification |
+| `strand_specific` | `""` | Trinity: `--SS_lib_type RF` (paired RF or FR, single F or R). rnaSPAdes: `--ss rf` or `--ss fr`. Also used for the read quantification (kallisto gets `--rf-stranded` or `--fr-stranded`) |
 | `kmers` | `""` | rnaSPAdes k-mer sizes, odd, below 128, ascending, for example `-k 21,33,55`. `""` lets rnaSPAdes choose |
 | `rnaspades_filter` | `default` | the rnaSPAdes set that becomes `transcriptome.fasta`: `default`, `hard` (long, well expressed transcripts) or `soft` (also short, low expressed ones) |
 | `scratch` | `""` | the environment variable that holds a node-local folder in a cluster job (`$SCRATCH`). The heavy rules work there and copy their files back. In a profile or `--config` write it without the `$` (`SCRATCH`). `""` works in the run folder |

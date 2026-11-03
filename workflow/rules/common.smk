@@ -149,6 +149,18 @@ def abundance_strand_option():
   return config["strand_specific"]
 
 
+def kallisto_strand_option():
+  """
+  The kallisto strand flag for align_and_estimate_abundance.pl. The script reads --SS_lib_type but never adds the flag
+  to kallisto (its test appends kallisto_add_opts to itself), so the flag goes in through --kallisto_add_opts. The
+  script's own rule: a type that starts with R gives --rf-stranded, any other --fr-stranded. "" gives none.
+  """
+  strand = abundance_strand_option()
+  if not strand:
+    return ""
+  return '--kallisto_add_opts "%s"' % ("--rf-stranded" if strand.split()[-1].startswith("R") else "--fr-stranded")
+
+
 def get_igv(wildcards):
   # one indexed alignment per replicate, the second column of the samples file
   with open(check_samples(config["samples_file"])) as handle:

@@ -62,7 +62,7 @@ rule prepare_samples_for_IGV:
   threads:
     4
   resources:
-    mem_mb=10240,
+    mem_mb=16384,
     runtime="4h"
   shell:
     """

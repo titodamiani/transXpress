@@ -9,6 +9,7 @@ results/assembly/rnaspades/K*/final.lib_data	strip:^[^\n]{0,4}---$	the first byt
 results/assembly/rnaspades/run_spades.yaml	strip:job_uuid:|tmp/spades_	rnaSPAdes writes a random job ID and names its temporary folder at random
 results/assembly/rnaspades/spades.log	skip	every line starts with the run time
 results/assembly/trinity.Trinity.fasta*	skip	Trinity writes the same records in another order in each run; transcriptome.fasta holds them sorted by name
+results/expression/bowtie2_rsem/*	skip	rule align_reads and rule IGV run only on request, so one run can hold this folder and the other not; two runs of one commit gave equal RSEM results and BAM records (compared outside this script)
 results/expression/kallisto/*/abundance.h5	skip	the HDF5 file holds the start time of kallisto
 results/expression/kallisto/*/run_info.json	strip:"start_time":	kallisto writes its start time
 results/qc/assembly/busco/logs/*	skip	the logs hold memory addresses, speeds and random folder names

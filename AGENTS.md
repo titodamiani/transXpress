@@ -11,6 +11,7 @@ Snakemake 9 pipeline: RNA-Seq reads to an annotated transcriptome. Results go in
 
 ## Rules
 - A change must not alter any file under `results/`, unless the change is the point and the results stay reproducible. Prove it with two runs of the same commit compared by `tests/compare_runs.py`, and a comparison with a reference run.
+- `tests/compare_runs.py` skips `results/expression/bowtie2_rsem/`. A change to `align_reads` or `prepare_samples_for_IGV` needs the manual comparison in `CONTRIBUTING.md`, section Tests.
 - One branch per fix, one small test per commit. Merge with a merge commit.
 - Run a Slurm job only when the task says so.
 

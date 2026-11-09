@@ -125,7 +125,8 @@ jobs:
 
   t1-image:
     needs: [databases, image]
-    runs-on: ubuntu-latest
+    # the apptainer 1.5.2 package needs libfuse3-3, which Ubuntu 26.04 (ubuntu-latest) does not have
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     permissions:
       contents: read

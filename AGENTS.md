@@ -20,6 +20,7 @@ Snakemake 9 pipeline: RNA-Seq reads to an annotated transcriptome. Results go in
 - A change inside a `shell:` or `run:` block (a comment too) changes the rule code. Snakemake then lists the finished jobs of an old run folder for a rerun; pass `--rerun-triggers mtime input params software-env` to continue such a folder.
 - `PERL_HASH_SEED=0` in the TransDecoder rules, `kallisto` and `trinity_stats` fixes the output order of Perl scripts. Keep it.
 - Chunk jobs of pfam and rfam write `<out>.part` and take the name `<out>` only when the last line is `# [ok]` (`publish_part` in `tools.sh`). Blast, SignalP, TargetP and TMHMM rename after a clean exit.
+- `run_rnaspades` (`workflow/scripts/tools.sh`) turns the rnaSPAdes mismatch correction off by an edit of the last K config. A change to it changes the assembly, but Snakemake does not see it (the function is not in the rule code). Keep the edit and its checks.
 - `retries: 0` on `rnaspades`, `trinity`, `kallisto`, `align_reads`: a retry asks for the same resources and fails the same way.
 - `pfam_parallel` uses 1 thread: more threads change the name column of `--domtblout` between runs.
 - In a profile or `--config`, `scratch` is written without `$` (`SCRATCH`): the sbatch line passes through a shell.

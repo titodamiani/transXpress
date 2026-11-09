@@ -68,7 +68,9 @@ rule rnaspades:
   params:
     scratch_var=SCRATCH_VAR,
     strand_specific=config["strand_specific"],
-    kmers=config["kmers"]
+    kmers=config["kmers"],
+    # a params value, so a change of the key reruns the rule
+    mismatch_correction="true" if config["rnaspades_mismatch_correction"] else "false"
   threads:
     config["rnaspades_threads"]
   resources:
@@ -97,7 +99,8 @@ rule rnaspades:
     fi
 
     # No --checkpoints: Slurm deletes the local folder at the end of the job
-    rnaspades.py --dataset {input.samples} -t {threads} -m $(( {resources.mem_mb} / 1024 )) -o "$SPADES_OUT" {params.strand_specific} --only-assembler {params.kmers} &>> {log}
+    # run_rnaspades (scripts/tools.sh) turns the mismatch correction off unless rnaspades_mismatch_correction is true
+    run_rnaspades {params.mismatch_correction} "$SPADES_OUT" --dataset {input.samples} -t {threads} -m $(( {resources.mem_mb} / 1024 )) -o "$SPADES_OUT" {params.strand_specific} --only-assembler {params.kmers} &>> {log}
 
     if [ "$SPADES_OUT" != "$OUT" ]; then
       SIZE=$(du -sh "$WORK" | cut -f1)

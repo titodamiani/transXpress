@@ -30,6 +30,10 @@ properties:
   kmers:
     type: string
     default: ""
+  rnaspades_mismatch_correction:
+    type: boolean
+    default: false
+    description: true runs the rnaSPAdes mismatch correction of the last K (the command of b8d5ac3); false turns it off.
   annotated_fasta_prefix:
     type: string
   e_value_threshold:

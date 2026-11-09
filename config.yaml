@@ -36,6 +36,9 @@ rnaspades_filter: "default"
 # rnaSPAdes only: k-mer sizes, odd, below 128, ascending, for example "-k 21,33,55". "" lets rnaSPAdes choose.
 kmers: ""
 
+# rnaSPAdes only: true runs the mismatch correction of the last K (the step depends on the thread count and most of its changes go against the reads); false turns it off.
+rnaspades_mismatch_correction: false
+
 # Text put before each sequence name in the annotated files.
 annotated_fasta_prefix: ""
 

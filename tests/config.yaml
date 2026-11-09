@@ -24,7 +24,7 @@ trinity_threads: 16
 align_reads_memory: "100"
 align_reads_threads: 16
 kallisto_memory: "16"
-kallisto_threads: 8
+kallisto_threads: 1
 busco_memory: "10"
 busco_threads: 4
 transdecoder_predict_memory: "10"

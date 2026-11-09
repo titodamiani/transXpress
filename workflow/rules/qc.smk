@@ -15,7 +15,8 @@ rule fastqc:
   threads:
     8
   resources:
-    mem_mb=6144,
+    # the fastqc launcher gives Java 512 MB per thread (-Xmx), plus 2 GB for the rest
+    mem_mb=lambda wildcards, threads: 2048 + 512 * threads,
     runtime="4h"
   shell:
     """

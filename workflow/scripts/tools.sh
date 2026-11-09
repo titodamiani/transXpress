@@ -39,20 +39,31 @@ run_rnaspades() {
       ;;
   esac
   rnaspades.py "$@" --only-generate-config || return 1
-  local last config
-  last=$(ls -d "$out"/K*/ | sort -V | tail -n 1)
-  config=${last}configs/config.info
+  # the last K config that run_spades.sh reads; a K folder of an earlier run in the same folder does not count
+  local configs config c
+  configs=$(grep -oE 'K[0-9]+/configs/config\.info' "$out/run_spades.sh" | sort -u -t K -k 2 -n)
+  config=$out/$(echo "$configs" | tail -n 1)
   if ! grep -qE '^correct_mismatches[[:space:]]+true' "$config"; then
     echo "run_rnaspades: no line 'correct_mismatches true' in $config" >&2
     return 1
   fi
   sed -i.bak -E 's/^(correct_mismatches[[:space:]]+)true/\1false/' "$config"
   rm -f "$config.bak"
-  grep -qE '^correct_mismatches[[:space:]]+false' "$config" || { echo "run_rnaspades: the edit of $config failed" >&2; return 1; }
+  for c in $configs; do
+    if grep -qE '^correct_mismatches[[:space:]]+true' "$out/$c"; then
+      echo "run_rnaspades: $out/$c still has correct_mismatches true" >&2
+      return 1
+    fi
+  done
   echo "run_rnaspades: correct_mismatches false in $config"
-  bash "$out/run_spades.sh" || return 1
+  # spades-core writes its log to stdout only; spades.py would copy it into spades.log
+  bash "$out/run_spades.sh" 2>&1 | tee -a "$out/spades.log"
+  [ "${PIPESTATUS[0]}" = 0 ] || return 1
+  [ -s "$out/transcripts.fasta" ] || { echo "run_rnaspades: no $out/transcripts.fasta" >&2; return 1; }
   if grep -q 'STAGE == Mismatch Correction' "$out/spades.log"; then
     echo "run_rnaspades: $out/spades.log has a Mismatch Correction stage" >&2
     return 1
   fi
+  # spades.py deletes these at the end of its stages; run_spades.sh does not
+  rm -rf "$out/.bin_reads" "$out/configs" "$out"/tmp/*
 }

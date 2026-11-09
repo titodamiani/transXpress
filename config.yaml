@@ -63,7 +63,7 @@ annotation_chunk_pep: 5000
 
 # Memory (GB), threads and time limit (minutes, or "30m", "12h", "7d") of the rules that grow with the data.
 # The values suit about 420 million read pairs (18 libraries). Keep the assembler threads the same in runs that you compare.
-# rnaSPAdes needs more memory with more threads (1 million pairs per library, 9 libraries: 27 GB at 32 threads, 44 GB at 64).
+# rnaSPAdes needs more memory with more threads (peak in its log, 9 libraries of 1 million pairs: 27 GB at 32 threads, 44 GB at 64; PiperNET reports/transxpress_upgrade).
 rnaspades_memory: "400"
 rnaspades_threads: 32
 rnaspades_runtime: "1d"

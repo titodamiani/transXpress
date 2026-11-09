@@ -38,7 +38,7 @@ rule trimmomatic_parallel:
   threads:
     8
   resources:
-    # Java heap (-Xmx in the shell) is mem_mb - 1024; 16 threads need about 2 GB of heap
+    # 256 MB per thread; the shell gives Java (-Xmx) mem_mb - 1024 MB. 16 threads failed with the 1 GB default heap of the wrapper.
     mem_mb=lambda wildcards, threads: 2048 + 256 * threads,
     runtime="4h"
   shell:

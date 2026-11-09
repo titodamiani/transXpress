@@ -218,6 +218,8 @@ rule signalp_parallel:
     runtime="4h"
   shell:
     """
+    # PyTorch uses every CPU it sees, and its values change with the thread count, so fix it to {threads}
+    export OMP_NUM_THREADS={threads} MKL_NUM_THREADS={threads}
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/signalp.XXXXXX")
     trap 'rm -rf "$TMP"' EXIT
     echo "work folder: $TMP" &> {log}
@@ -254,6 +256,8 @@ rule targetp_parallel:
     runtime="4h"
   shell:
     """
+    # TensorFlow uses every CPU it sees, and its values change with the thread count, so fix it to {threads}
+    export OMP_NUM_THREADS={threads} MKL_NUM_THREADS={threads} TF_NUM_INTRAOP_THREADS={threads} TF_NUM_INTEROP_THREADS=1
     # targetp writes its result into the folder it runs in
     RUN=$(pwd)
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/targetp.XXXXXX")

@@ -63,6 +63,7 @@ annotation_chunk_pep: 5000
 
 # Memory (GB), threads and time limit (minutes, or "30m", "12h", "7d") of the rules that grow with the data.
 # The values suit about 420 million read pairs (18 libraries). Keep the assembler threads the same in runs that you compare.
+# rnaSPAdes needs more memory with more threads (1 million pairs per library, 9 libraries: 27 GB at 32 threads, 44 GB at 64).
 rnaspades_memory: "400"
 rnaspades_threads: 32
 rnaspades_runtime: "1d"
@@ -74,7 +75,8 @@ align_reads_memory: "100"
 align_reads_threads: 16
 align_reads_runtime: "3d"
 kallisto_memory: "20"
-kallisto_threads: 16
+# kallisto runs on 1 thread whatever this value (the Trinity script passes no -t to it); a higher value only holds CPUs.
+kallisto_threads: 1
 kallisto_runtime: "4h"
 busco_memory: "10"
 busco_threads: 16

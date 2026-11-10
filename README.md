@@ -97,7 +97,7 @@ Targets after the profile: a rule or a file (`results/qc/multiqc/before_trim/mul
 | `db_dir` | `resources/db` | database folder, see [Annotation databases](#annotation-databases) |
 | `pfam_release`, `rfam_release`, `sprot_release` | `38.2`, `15.1`, `2026_03` | database releases; keep the quotes |
 | `annotation_chunk_fasta`, `_orfs`, `_pep` | `1000`, `5000`, `5000` | sequences in each annotation job (one job per chunk and tool; a chunk takes up to 2.5 h for blastx, about 1 h for the others) |
-| `<rule>_memory`, `_threads`, `_runtime` | see the file | GB, threads and time limit of `rnaspades`, `trinity`, `align_reads`, `kallisto`, `busco`, `transdecoder_predict`, `sprot_blastx`. The defaults suit 18 libraries (about 420 million read pairs). A time limit is minutes or text such as `12h`, `7d` |
+| `<rule>_memory`, `_threads`, `_runtime` | see the file | GB, threads and time limit of `rnaspades`, `trinity`, `align_reads`, `kallisto`, `busco`, `transdecoder_predict`, `sprot_blastx`. The defaults suit 18 libraries (about 420 million read pairs). A time limit is minutes or text such as `12h`, `7d`. kallisto runs on 1 thread whatever its thread value (the Trinity script passes no `-t`), so its default is 1. rnaSPAdes needs more memory with more threads |
 
 The assembly depends on the assembler version, the thread count and the CPU: keep them the same in runs that you compare. For one run, change a limit on the command line: `--set-resources trinity:runtime=10d`. Site flags of Slurm (constraint, account, excluded nodes) go in the profile as `default-resources` or `set-resources`, with two pairs of quotes for text (`slurm_extra: "'--exclude=node1'"`); see `profiles/aurum/config.yaml`.
 

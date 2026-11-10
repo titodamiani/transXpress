@@ -123,7 +123,8 @@ properties:
   kallisto_threads:
     type: integer
     minimum: 1
-    default: 16
+    default: 1
+    description: kallisto runs on 1 thread whatever this value (the Trinity script passes no -t to it).
   kallisto_runtime:
     type: [string, integer]
     default: "4h"

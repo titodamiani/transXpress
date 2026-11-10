@@ -85,6 +85,7 @@ Targets after the profile: a rule or a file (`results/qc/multiqc/before_trim/mul
 | `trinity_parameters` | `--seqType fq` | extra Trinity options |
 | `strand_specific` | `""` | Trinity: `--SS_lib_type RF` (paired RF or FR, single F or R). rnaSPAdes: `--ss rf` or `--ss fr`. Also used for the read quantification (kallisto gets `--rf-stranded` or `--fr-stranded`) |
 | `kmers` | `""` | rnaSPAdes k-mer sizes, odd, below 128, ascending, for example `-k 21,33,55`. `""` lets rnaSPAdes choose |
+| `rnaspades_mismatch_correction` | `false` | `true` runs the rnaSPAdes mismatch correction of the last K, as transXpress `b8d5ac3` and earlier did; see [rnaSPAdes mismatch correction](#rnaspades-mismatch-correction) |
 | `rnaspades_filter` | `default` | the rnaSPAdes set that becomes `transcriptome.fasta`: `default`, `hard` (long, well expressed transcripts) or `soft` (also short, low expressed ones) |
 | `scratch` | `""` | the environment variable that holds a node-local folder in a cluster job (`$SCRATCH`). The heavy rules work there and copy their files back. In a profile or `--config` write it without the `$` (`SCRATCH`). `""` works in the run folder |
 | `annotated_fasta_prefix` | `""` | text put before each name in the annotated files, as `<prefix>\|<name>` |
@@ -96,9 +97,15 @@ Targets after the profile: a rule or a file (`results/qc/multiqc/before_trim/mul
 | `db_dir` | `resources/db` | database folder, see [Annotation databases](#annotation-databases) |
 | `pfam_release`, `rfam_release`, `sprot_release` | `38.2`, `15.1`, `2026_03` | database releases; keep the quotes |
 | `annotation_chunk_fasta`, `_orfs`, `_pep` | `1000`, `5000`, `5000` | sequences in each annotation job (one job per chunk and tool; a chunk takes up to 2.5 h for blastx, about 1 h for the others) |
-| `<rule>_memory`, `_threads`, `_runtime` | see the file | GB, threads and time limit of `rnaspades`, `trinity`, `align_reads`, `kallisto`, `busco`, `transdecoder_predict`, `sprot_blastx`. The defaults suit 18 libraries (about 420 million read pairs). A time limit is minutes or text such as `12h`, `7d` |
+| `<rule>_memory`, `_threads`, `_runtime` | see the file | GB, threads and time limit of `rnaspades`, `trinity`, `align_reads`, `kallisto`, `busco`, `transdecoder_predict`, `sprot_blastx`. The defaults suit 18 libraries (about 420 million read pairs). A time limit is minutes or text such as `12h`, `7d`. kallisto runs on 1 thread whatever its thread value (the Trinity script passes no `-t`), so its default is 1. rnaSPAdes needs more memory with more threads |
 
 The assembly depends on the assembler version, the thread count and the CPU: keep them the same in runs that you compare. For one run, change a limit on the command line: `--set-resources trinity:runtime=10d`. Site flags of Slurm (constraint, account, excluded nodes) go in the profile as `default-resources` or `set-resources`, with two pairs of quotes for text (`slurm_extra: "'--exclude=node1'"`); see `profiles/aurum/config.yaml`.
+
+### rnaSPAdes mismatch correction
+
+rnaSPAdes corrects single bases of the graph in the last K (`correct_mismatches` in its K config). transXpress turns this step off (`rnaspades_mismatch_correction: false`), because it depends on the thread count and most of its changes go against the reads. On the full piper56 assembly (rnaSPAdes 4.3.0, 18 libraries), the reads go against 77.8% of the positions the step changes at 32 threads and support 1.6%; at 16 threads, 73.4% and 2.0%. With the step off, 16 and 32 threads give the same 201,923 transcript sequences. Source: the PnLDC assembly report in the PiperNET repository (`reports/PnLDC-assembly-error/`).
+
+rnaSPAdes has no command-line option for this step. `run_rnaspades` in `workflow/scripts/tools.sh` runs `rnaspades.py --only-generate-config`, sets `correct_mismatches false` in the config of the last K, runs `run_spades.sh` (its output goes to `spades.log`), stops if the log has a Mismatch Correction stage, and deletes the work files that `rnaspades.py` deletes in a single call (`.bin_reads`, `configs`, `tmp/*`). `rnaspades_mismatch_correction: true` runs the single `rnaspades.py` call of transXpress `b8d5ac3` and earlier, and gives their results.
 
 ## Annotation databases
 

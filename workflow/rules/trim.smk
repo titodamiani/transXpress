@@ -38,7 +38,8 @@ rule trimmomatic_parallel:
   threads:
     8
   resources:
-    mem_mb=4096,
+    # 256 MB per thread; the shell gives Java (-Xmx) mem_mb - 1024 MB. 16 threads failed with the 1 GB default heap of the wrapper.
+    mem_mb=lambda wildcards, threads: 2048 + 256 * threads,
     runtime="4h"
   shell:
     """
@@ -56,11 +57,25 @@ rule trimmomatic_parallel:
     TRIMMOMATIC_PARAMETERS='{params.trimmomatic}'
     TRIMMOMATIC_PARAMETERS=${{TRIMMOMATIC_PARAMETERS//'{{adapters}}'/$ADAPTERS}}
     OUT=results/trimmomatic/trimmed_reads/{wildcards.job_index}
+    # the bioconda wrapper sets a 1 GB heap; -Xmx replaces it
+    HEAP=-Xmx$(( {resources.mem_mb} - 1024 ))m
     if [ -n "$R_READS" ]; then
-      trimmomatic PE -threads {threads} $F_READS $R_READS $OUT.R1-P.qtrim.fastq.gz $OUT.R1-U.qtrim.fastq.gz $OUT.R2-P.qtrim.fastq.gz $OUT.R2-U.qtrim.fastq.gz $TRIMMOMATIC_PARAMETERS &>> {log}
+      PARTS="R1-P R1-U R2-P R2-U"
+      trimmomatic $HEAP PE -threads {threads} $F_READS $R_READS $OUT.tmp.R1-P.qtrim.fastq.gz $OUT.tmp.R1-U.qtrim.fastq.gz $OUT.tmp.R2-P.qtrim.fastq.gz $OUT.tmp.R2-U.qtrim.fastq.gz $TRIMMOMATIC_PARAMETERS &>> {log}
+    else
+      PARTS="U"
+      trimmomatic $HEAP SE -threads {threads} $F_READS $OUT.tmp.U.qtrim.fastq.gz $TRIMMOMATIC_PARAMETERS &>> {log}
+    fi
+    # Trimmomatic can report success for a broken gzip file, so each file gets its name only after gzip -t
+    for PART in $PARTS; do
+      gzip -t $OUT.tmp.$PART.qtrim.fastq.gz &>> {log}
+    done
+    for PART in $PARTS; do
+      mv $OUT.tmp.$PART.qtrim.fastq.gz $OUT.$PART.qtrim.fastq.gz &>> {log}
+    done
+    if [ -n "$R_READS" ]; then
       echo $SAMPLE $REPLICATE $OUT.R1-P.qtrim.fastq.gz $OUT.R2-P.qtrim.fastq.gz > {output} 2>> {log}
     else
-      trimmomatic SE -threads {threads} $F_READS $OUT.U.qtrim.fastq.gz $TRIMMOMATIC_PARAMETERS &>> {log}
       echo $SAMPLE $REPLICATE $OUT.U.qtrim.fastq.gz > {output} 2>> {log}
     fi
     """

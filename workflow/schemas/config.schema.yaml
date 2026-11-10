@@ -30,6 +30,10 @@ properties:
   kmers:
     type: string
     default: ""
+  rnaspades_mismatch_correction:
+    type: boolean
+    default: false
+    description: true runs the rnaSPAdes mismatch correction of the last K (the command of b8d5ac3); false turns it off.
   annotated_fasta_prefix:
     type: string
   e_value_threshold:
@@ -119,7 +123,8 @@ properties:
   kallisto_threads:
     type: integer
     minimum: 1
-    default: 16
+    default: 1
+    description: kallisto runs on 1 thread whatever this value (the Trinity script passes no -t to it).
   kallisto_runtime:
     type: [string, integer]
     default: "4h"

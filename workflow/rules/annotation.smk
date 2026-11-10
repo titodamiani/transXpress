@@ -218,6 +218,8 @@ rule signalp_parallel:
     runtime="4h"
   shell:
     """
+    # PyTorch uses every CPU it sees and reads OMP_NUM_THREADS (SignalP 6.0g sets no thread count), so fix it to {threads}
+    export OMP_NUM_THREADS={threads} MKL_NUM_THREADS={threads}
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/signalp.XXXXXX")
     trap 'rm -rf "$TMP"' EXIT
     echo "work folder: $TMP" &> {log}
@@ -254,13 +256,17 @@ rule targetp_parallel:
     runtime="4h"
   shell:
     """
+    # TargetP 2.0 has TensorFlow 1.7, which uses every CPU the process may run on and reads no thread variable;
+    # its values change with the CPU count, so taskset gives it the first {threads} CPUs of the job
+    CPUS=$(grep Cpus_allowed_list /proc/self/status | cut -f2 | tr ',' '\\n' | awk -F- -v n={threads} '{{ for (i = $1; i <= (NF == 2 ? $2 : $1); i++) if (k++ < n) print i }}' | paste -sd, -)
     # targetp writes its result into the folder it runs in
     RUN=$(pwd)
     TMP=$(mktemp -d "${{TMPDIR:-/tmp}}/targetp.XXXXXX")
     trap 'rm -rf "$TMP"' EXIT
     echo "work folder: $TMP" &> "$RUN/{log}"
     cd $TMP
-    targetp -fasta "$RUN/{input}" -format short -org {params.organism} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
+    echo "CPUs for targetp: $CPUS" &>> "$RUN/{log}"
+    taskset -c "$CPUS" targetp -fasta "$RUN/{input}" -format short -org {params.organism} -prefix targetp_{wildcards.index} &>> "$RUN/{log}"
     # the move from the temporary folder can be a copy, so the chunk gets its name only after it
     rm -f "$RUN/{output}.part"
     mv targetp_{wildcards.index}_summary.targetp2 "$RUN/{output}.part" &>> "$RUN/{log}"

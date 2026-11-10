@@ -25,6 +25,24 @@ default-resources:
   # $SCRATCH is in RAM on d001
   slurm_extra: "'--exclude=d001'"
 
+# The annotation chunk rules run on gen-a (Intel Skylake). Every other rule, the assembly included, stays on gen-d.
+# A --set-resources on the command line replaces this list, so repeat the entries.
+set-resources:
+  rfam_parallel:
+    constraint: "'gen-a'"
+  pfam_parallel:
+    constraint: "'gen-a'"
+  sprot_blastp_parallel:
+    constraint: "'gen-a'"
+  sprot_blastx_parallel:
+    constraint: "'gen-a'"
+  tmhmm_parallel:
+    constraint: "'gen-a'"
+  signalp_parallel:
+    constraint: "'gen-a'"
+  targetp_parallel:
+    constraint: "'gen-a'"
+
 # A --config on the command line replaces this list, so add scratch=SCRATCH to it.
 config:
   # Without the $: the sbatch line passes the value through a shell.

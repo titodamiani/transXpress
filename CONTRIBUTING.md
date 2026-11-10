@@ -17,6 +17,7 @@ Read `AGENTS.md` first (layout, rules, traps). Run commands and config keys are 
 |---|---|
 | `keys` | `tests/check_keys.py`: `config.yaml`, `config.schema.yaml` and the README table name the same keys |
 | `kallisto-strand` | `tests/check_kallisto_strand.py`: the kallisto rule passes `--rf-stranded` or `--fr-stranded` for each `strand_specific` value |
+| `rnaspades-mc` | `tests/check_rnaspades_mc.py`: with a fake `rnaspades.py`, `run_rnaspades` makes one call for `rnaspades_mismatch_correction: true`, and for `false` sets `correct_mismatches false` only in the last K and stops when the edit or the log check fails |
 | `databases` | fills a database folder with `download_databases` at the releases of `test.yml` and caches it |
 | `t1` | for `rnaspades` and `trinity`: two T1 runs in conda mode, then `compare_runs.py` |
 | `image` | calls `image.yml`: pin files, env paths of the `Dockerfile`, the main image on ghcr.io |
